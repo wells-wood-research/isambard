@@ -8,6 +8,7 @@ from isambard.specifications.helix import Helix
 from ampal.geometry import dihedral
 import isambard.modelling as modelling
 from typing import Union, List, Tuple
+
 # TODO Remove rosetta mode, move average_2_points to geometry
 
 
@@ -201,6 +202,7 @@ def get_icosahedron_connections():
         [6, 7, 8, 9, 10],
     ]
 
+
 def get_orientation_codes(with_dots):
     ordered_orientations_list = [
         "b3iii",
@@ -234,10 +236,11 @@ def get_orientation_codes(with_dots):
         "l6niiin",
         "s6",
     ]
-    if with_dots==False:
-        return [i.replace(".","_") for i in ordered_orientations_list]
-    elif with_dots==True:
+    if with_dots == False:
+        return [i.replace(".", "_") for i in ordered_orientations_list]
+    elif with_dots == True:
         return ordered_orientations_list
+
 
 def get_rib_orientations():
 
@@ -291,7 +294,7 @@ class DeltaProt(Assembly):
     orientation_codes = get_orientation_codes(with_dots=False)
     orientation_codes_w_dots = get_orientation_codes(with_dots=True)
 
-    default_rib_len = 11 
+    default_rib_len = 11
     default_aa = 10
     # problem will set this value for all of instances of a class
     # TODO: use clasmethod instead. Or staticmethod?
@@ -310,18 +313,19 @@ class DeltaProt(Assembly):
         6: get_icosahedron_connections,
     }
 
+    def __init__(
+        self,
+        conformation: str,
+        rib_len: float = None,
+        aa: Union[List, Tuple, int] = None,
+        centre_helices: bool = True,
+        centred_ca: int = 1,
+        build_from_aa: str = "A",
+        ribs: List = None,
+        angles: List = None,
+    ):
 
-    def __init__(self, 
-                conformation: str, 
-                rib_len: float = None,
-                aa: Union[List, Tuple, int]=None, 
-                centre_helices:bool=True, 
-                centred_ca: int=1, 
-                build_from_aa: str="A", 
-                ribs:List=None,
-                angles: List=None):
-
-        super(DeltaProt, self).__init__() # keep Assembly init and append this init 
+        super(DeltaProt, self).__init__()  # keep Assembly init and append this init
 
         conformation = conformation.lower()
         if conformation not in self.rib_orientations.keys():
@@ -330,26 +334,36 @@ class DeltaProt(Assembly):
             self.conformation = conformation
 
         # Use provided ribs, angles, aa if they are not None, else use the default values
-        self.rib_len= rib_len if rib_len is not None else self.default_rib_len
-        self.ribs = ribs if ribs is not None else self.rib_orientations[self.conformation]["ribs"]
-        self.angles = angles if angles is not None else self.rib_orientations[self.conformation]["angles"]
-        if isinstance(aa,int):
+        self.rib_len = rib_len if rib_len is not None else self.default_rib_len
+        self.ribs = (
+            ribs
+            if ribs is not None
+            else self.rib_orientations[self.conformation]["ribs"]
+        )
+        self.angles = (
+            angles
+            if angles is not None
+            else self.rib_orientations[self.conformation]["angles"]
+        )
+        if isinstance(aa, int):
             self.aa = [aa] * len(self.ribs)
-        elif isinstance(aa,List) or isinstance(aa,Tuple):
+        elif isinstance(aa, List) or isinstance(aa, Tuple):
             self.aa = aa
-        elif aa==None:
-            self.aa = [self.default_aa]  * len(self.ribs)
+        elif aa == None:
+            self.aa = [self.default_aa] * len(self.ribs)
 
         self.rib_num = int(self.conformation[1])
         # self.ap = [0] * self.rib_num
         self.centred_ca = centred_ca - 1
         if centre_helices:
-            self.ax_trans_adjust = [(self.rib_len / 2.0) - (((self.aa[i] - 1) * 1.52) / 2.0) for i in range(len(self.ribs))]
+            self.ax_trans_adjust = [
+                (self.rib_len / 2.0) - (((self.aa[i] - 1) * 1.52) / 2.0)
+                for i in range(len(self.ribs))
+            ]
         else:
-            self.ax_trans_adjust = [0]*len(self.ribs)
+            self.ax_trans_adjust = [0] * len(self.ribs)
 
         self.build_from_aa = build_from_aa
-
 
         self.build()
 
@@ -364,16 +378,18 @@ class DeltaProt(Assembly):
             # if self.ap[i]:
             #     edges.append((dv[v2], dv[v1]))
             # else:
-            helices_edges.append((dv[v1], dv[v2]))  # Tadas changes: ignore antiparalel flag
+            helices_edges.append(
+                (dv[v1], dv[v2])
+            )  # Tadas changes: ignore antiparalel flag
         return helices_edges
-    
+
     def loops_edges(self):
         dv = self.deltahedron_vertices()
         rib_vertices = self.ribs
         loops_edges = []
-        for i in range(len(rib_vertices)-1):
+        for i in range(len(rib_vertices) - 1):
             v1, v2 = rib_vertices[i]
-            v1_next, v2_next = rib_vertices[i+1]
+            v1_next, v2_next = rib_vertices[i + 1]
             loops_edges.append((dv[v2], dv[v1_next]))
         return loops_edges
 
@@ -407,7 +423,7 @@ class DeltaProt(Assembly):
             helix.rotate(
                 angle=self.angles[i],
                 axis=helix.axis.unit_tangent,
-                point=helix.axis.midpoint
+                point=helix.axis.midpoint,
             )
             polymers.append(helix)
 
@@ -424,16 +440,19 @@ class DeltaProt(Assembly):
             # print("before",self[0].axis)
             # polypeptide_count = len([i for i in self])
             # model_sequences = polypeptide_count * [self.build_from_aa * self.aa]
-            model_sequences = [self.build_from_aa*res_num for res_num in self.aa] # changes when introduced aa as a list
+            model_sequences = [
+                self.build_from_aa * res_num for res_num in self.aa
+            ]  # changes when introduced aa as a list
             # model_sequences = [self.build_from_aa * len(list(self.get_monomers()))]
             all_aa_model = modelling.pack_side_chains_scwrl(self, model_sequences)
             self.update_with_new_model(all_aa_model)
             # print("after update",self[0].axis)
         return
-    
+
     def update_with_new_model(self, new_model):
         for old, new in zip(self._molecules, new_model._molecules):
             old._monomers = new._monomers
+
 
 __author__ = "Christopher W. Wood"
 __status__ = "Development"
