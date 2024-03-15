@@ -2,6 +2,7 @@
 from .solenoid import HelixPair, Solenoid
 from .coiledcoil import CoiledCoil
 from .nucleic_acid_duplex import DNADuplex
+from .deltaprot import DeltaProt
 
 # Polymer Specs
 from .ta_polypeptide import TAPolypeptide

@@ -1,3 +1,4 @@
+import dataclasses
 import numpy
 import json
 import os
@@ -8,8 +9,6 @@ from isambard.specifications.helix import Helix
 from ampal.geometry import dihedral
 import isambard.modelling as modelling
 from typing import Union, List, Tuple
-
-# TODO Remove rosetta mode, move average_2_points to geometry
 
 
 def gen_octahedron(el):
@@ -256,6 +255,32 @@ def get_rib_orientations():
     return rib_orientations
 
 
+@dataclasses.dataclass
+class HelixConformation:
+    """Contains parameters for an individual helix of a `DeltaProt`"""
+
+    rib_vertices: Tuple[int, int]
+    helix_axis_rotation: float
+    num_amino_acids: int
+
+
+"""
+my_dp = DeltaProt(
+    helix_conformations=[
+        HelixConformation((0, 1), 330.0, 11),
+        HelixConformation((2, 3), 330.0, 11),
+        HelixConformation((4, 5), 330.0, 11),
+    ],
+    rib_len=11,
+    centre_helices=True,
+    centred_ca=1,
+)
+my_dp.determine_orientation_code() # might return the ways that its wrong
+
+my_nice_dp = DeltaProt.from_conformation_string("b3iii")
+"""
+
+
 class DeltaProt(Assembly):
     """Generates a deltahedral protein with specified rib orientation and length.
 
@@ -296,7 +321,7 @@ class DeltaProt(Assembly):
 
     default_rib_len = 11
     default_aa = 10
-    # problem will set this value for all of instances of a class
+    # problem: will set this value for all of instances of a class
     # TODO: use clasmethod instead. Or staticmethod?
 
     choose_delta = {
@@ -315,72 +340,42 @@ class DeltaProt(Assembly):
 
     def __init__(
         self,
-        conformation: str,
+        helix_conformations: List[HelixConformation],
         rib_len: float = None,
-        aa: Union[List, Tuple, int] = None,
         centre_helices: bool = True,
         centred_ca: int = 1,
-        build_from_aa: str = "A",
-        ribs: List = None,
-        angles: List = None,
     ):
 
         super(DeltaProt, self).__init__()  # keep Assembly init and append this init
 
-        conformation = conformation.lower()
-        if conformation not in self.rib_orientations.keys():
-            raise ValueError("Invalid deltaprot conformation {}".format(conformation))
-        else:
-            self.conformation = conformation
-
-        # Use provided ribs, angles, aa if they are not None, else use the default values
+        self.helix_conformations = helix_conformations
         self.rib_len = rib_len if rib_len is not None else self.default_rib_len
-        self.ribs = (
-            ribs
-            if ribs is not None
-            else self.rib_orientations[self.conformation]["ribs"]
-        )
-        self.angles = (
-            angles
-            if angles is not None
-            else self.rib_orientations[self.conformation]["angles"]
-        )
-        if isinstance(aa, int):
-            self.aa = [aa] * len(self.ribs)
-        elif isinstance(aa, List) or isinstance(aa, Tuple):
-            self.aa = aa
-        elif aa == None:
-            self.aa = [self.default_aa] * len(self.ribs)
-
-        self.rib_num = int(self.conformation[1])
-        # self.ap = [0] * self.rib_num
-        self.centred_ca = centred_ca - 1
         if centre_helices:
             self.ax_trans_adjust = [
-                (self.rib_len / 2.0) - (((self.aa[i] - 1) * 1.52) / 2.0)
-                for i in range(len(self.ribs))
+                (self.rib_len / 2.0)
+                - (((self.helix_conformations[i].num_amino_acids - 1) * 1.52) / 2.0)
+                for i in range(len(self.helix_conformations))
             ]
         else:
-            self.ax_trans_adjust = [0] * len(self.ribs)
+            self.ax_trans_adjust = [0] * len(self.helix_conformations)
+        self.centred_ca = centred_ca - 1
 
-        self.build_from_aa = build_from_aa
+        self.orientation_code = self.determine_orientation_code()
+        if self.orientation_code is not None:
+            print(
+                f"Created an assembly with Murzin & Finkelstein orientation code '{self.orientation_code}'"
+            )
+        else:
+            print(f"Created an assembly with unknown orientation")
 
         self.build()
 
     def helices_edges(self):
         dv = self.deltahedron_vertices()
-        # vertices to choose specific to the conformation
-        rib_vertices = self.ribs
         helices_edges = []
-        for i, vertices in enumerate(rib_vertices):
-            v1, v2 = vertices
-            # flip if antiparallel
-            # if self.ap[i]:
-            #     edges.append((dv[v2], dv[v1]))
-            # else:
-            helices_edges.append(
-                (dv[v1], dv[v2])
-            )  # Tadas changes: ignore antiparalel flag
+        for helix_conformation in self.helix_conformations:
+            v1, v2 = helix_conformation.rib_vertices
+            helices_edges.append((dv[v1], dv[v2]))
         return helices_edges
 
     def loops_edges(self):
@@ -395,7 +390,7 @@ class DeltaProt(Assembly):
 
     def deltahedron_vertices(self):
         # Number and length of ribs determine the vertices of the deltaprot shape
-        return self.choose_delta[self.rib_num](self.rib_len)
+        return self.choose_delta[len(self.helix_conformations)](self.rib_len)
 
     @property
     def centre(self):
@@ -411,7 +406,7 @@ class DeltaProt(Assembly):
         for i, (start, end) in enumerate(self.helices_edges()):
             start = numpy.array(start)
             end = numpy.array(end)
-            helix = Helix(aa=self.aa[i])
+            helix = Helix(aa=self.helix_conformations[i].num_amino_acids)
             helix.move_to(start=start, end=end)
             helix.translate(self.ax_trans_adjust[i] * helix.axis.unit_tangent)
             ax_rot = dihedral(
@@ -419,9 +414,10 @@ class DeltaProt(Assembly):
             )
             helix.rotate(
                 angle=ax_rot, axis=helix.axis.unit_tangent, point=helix.axis.midpoint
-            )
+            )  # initial rotation of helix aligning a specific residue to face the bundle centre (might be redundant)
+
             helix.rotate(
-                angle=self.angles[i],
+                angle=self.helix_conformations[i].helix_axis_rotation,
                 axis=helix.axis.unit_tangent,
                 point=helix.axis.midpoint,
             )
@@ -433,25 +429,58 @@ class DeltaProt(Assembly):
             polymer.ampal_parent = self
             for monomer in polymer._monomers:
                 monomer.ampal_parent = polymer
-        self.relabel_polymers()  # relabel to give each a chain label
+        self.relabel_polymers()  # relabel to give each helix a chain label
         self.relabel_atoms()
 
-        if self.build_from_aa != "G":
-            # print("before",self[0].axis)
-            # polypeptide_count = len([i for i in self])
-            # model_sequences = polypeptide_count * [self.build_from_aa * self.aa]
-            model_sequences = [
-                self.build_from_aa * res_num for res_num in self.aa
-            ]  # changes when introduced aa as a list
-            # model_sequences = [self.build_from_aa * len(list(self.get_monomers()))]
-            all_aa_model = modelling.pack_side_chains_scwrl(self, model_sequences)
-            self.update_with_new_model(all_aa_model)
-            # print("after update",self[0].axis)
         return
 
     def update_with_new_model(self, new_model):
         for old, new in zip(self._molecules, new_model._molecules):
             old._monomers = new._monomers
+
+    def determine_orientation_code(self):
+        orientation_codes_sorted_ribs = {
+            "b3iii": [(0, 1), (2, 3), (4, 5)],
+            "b3nnn": [(0, 2), (1, 4), (3, 5)],
+            "b4iiiix": [(0, 5), (1, 3), (2, 7), (4, 6)],
+            "b4iiiiy": [(0, 1), (2, 5), (3, 4), (6, 7)],
+            "b4iiin": [(0, 4), (1, 5), (2, 6), (3, 7)],
+            "b4inin": [(0, 4), (1, 2), (3, 7), (5, 6)],
+            "b4innn": [(0, 5), (1, 2), (3, 7), (4, 6)],
+            "b4nnnnx": [(0, 3), (1, 5), (2, 6), (4, 7)],
+            "b4nnnny": [(0, 1), (2, 3), (4, 5), (6, 7)],
+            "b5iiiin": [(0, 4), (1, 2), (3, 8), (5, 6), (7, 9)],
+            "b5iinin": [(0, 4), (1, 5), (2, 6), (3, 8), (7, 9)],
+            "b5ininn": [(0, 1), (2, 6), (3, 8), (4, 5), (7, 9)],
+            "b5innnn": [(0, 1), (2, 6), (3, 4), (5, 8), (7, 9)],
+            "b6iiniin": [(0, 2), (1, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
+            "b6ininin": [(0, 3), (1, 7), (2, 8), (4, 9), (5, 10), (6, 11)],
+            "b6inninn": [(0, 3), (1, 2), (4, 9), (5, 10), (6, 11), (7, 8)],
+            "h4i.n": [(0, 5), (1, 3), (2, 6), (4, 7)],
+            "h5i.i": [(0, 1), (2, 3), (4, 8), (5, 6), (7, 9)],
+            "h5n.n": [(0, 4), (1, 6), (2, 3), (5, 8), (7, 9)],
+            "h6i.i.i": [(0, 4), (1, 2), (3, 9), (5, 6), (7, 8), (10, 11)],
+            "h6n.n.n": [(0, 1), (2, 7), (3, 4), (5, 10), (6, 11), (8, 9)],
+            "l4iin": [(0, 1), (2, 6), (3, 7), (4, 5)],
+            "l4inn": [(0, 1), (2, 5), (3, 7), (4, 6)],
+            "l5iiin": [(0, 2), (1, 6), (3, 4), (5, 8), (7, 9)],
+            "l5inni": [(0, 2), (1, 6), (3, 8), (4, 5), (7, 9)],
+            "l5innn": [(0, 3), (1, 4), (2, 6), (5, 8), (7, 9)],
+            "l5niin": [(0, 3), (1, 5), (2, 6), (4, 8), (7, 9)],
+            "l6innni": [(0, 1), (2, 3), (4, 9), (5, 10), (6, 11), (7, 8)],
+            "l6niiin": [(0, 1), (2, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
+            "s6": [(0, 5), (1, 7), (2, 3), (4, 9), (6, 10), (8, 11)],
+        }
+
+        # Match helix_conformation.rib_vertices against sorted orientation codes
+        rib_vertices = [i.rib_vertices for i in self.helix_conformations]
+
+        sorted_rib_vertices = sorted([tuple(sorted(pair)) for pair in rib_vertices])
+        determined_orientation_code = None
+        for code, orientation_sorted_ribs in orientation_codes_sorted_ribs.items():
+            if sorted_rib_vertices == orientation_sorted_ribs:
+                determined_orientation_code = code  # Return the matching code
+        return determined_orientation_code
 
 
 __author__ = "Christopher W. Wood"
