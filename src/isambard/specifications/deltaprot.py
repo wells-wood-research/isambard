@@ -1,258 +1,18 @@
 import dataclasses
 import numpy
-import json
-import os
+import warnings
 
 # import the relevant secondary structure
 from ampal.assembly import Assembly
 from isambard.specifications.helix import Helix
 from ampal.geometry import dihedral
-import isambard.modelling as modelling
-from typing import Union, List, Tuple
-
-
-def gen_octahedron(el):
-    """Generates vertices of an octahedron with a defined edge length.
-
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
-
-    Returns
-    -------
-    vertices : [triple]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    xy = numpy.sin(numpy.pi / 4) * el
-    vertices = [
-        (0, 0, xy),  # a
-        (0, xy, 0),  # b
-        (xy, 0, 0),  # c
-        (0, -xy, 0),  # d
-        (-xy, 0, 0),  # e
-        (0, 0, -xy),  # f
-    ]
-    return vertices
-
-
-def gen_snub_disphenoid(el):
-    """Generates vertices of a snub-nosed disphenoid with a defined edge length.
-
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
-
-    Returns
-    -------
-    vertices : [triple]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    # -z1 to move gh vector off x axis
-    x2 = 0.644584 * el
-    z1 = 0.578369 * el
-    z2 = 0.989492 * el
-    z3 = 1.56786 * el
-
-    vertices = [
-        (0, el / 2, z3 - z1),  # a
-        (0, -el / 2, z3 - z1),  # b
-        (0, -x2, z1 - z1),  # c
-        (-x2, 0, z2 - z1),  # d
-        (0, x2, z1 - z1),  # e
-        (x2, 0, z2 - z1),  # f
-        (el / 2, 0, 0 - z1),  # g
-        (-el / 2, 0, 0 - z1),  # h
-    ]
-    return vertices
-
-
-def gen_gyro_square_bipyramid(el):
-    """Generates vertices of a gyroelongated bipyramid with a defined edge length.
-
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
-
-    Returns
-    -------
-    vertices : [(float, float, float)]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    rl = (0.5 * el) / numpy.sin(numpy.pi / 4)
-    zs = numpy.sin(numpy.pi / 3) * el
-    pl = rl - (el / 2)
-    z1 = numpy.sqrt((zs**2) - (pl**2)) / 2
-    rxy = el / 2
-    theta = numpy.arccos(rl / el)
-    z2 = numpy.sin(theta) * el
-    z3 = z1 + z2
-    vertices = [
-        (0, 0, z3),  # a
-        (0, rl, z1),  # b
-        (rl, 0, z1),  # c
-        (0, -rl, z1),  # d
-        (-rl, 0, z1),  # e
-        (-rxy, rxy, -z1),  # f
-        (rxy, rxy, -z1),  # g
-        (rxy, -rxy, -z1),  # h
-        (-rxy, -rxy, -z1),  # k
-        (0, 0, -z3),  # l
-    ]
-    return vertices
-
-
-def gen_icosahedron(el):
-    """Generates vertices of an icosahedron with a defined edge length.
-
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
-
-    Returns
-    -------
-    vertices : [(float, float, float)]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    rl = (el / 2) / numpy.sin(numpy.pi / 5)
-    x2 = numpy.cos(numpy.pi / 2 - (2 * numpy.pi / 5)) * rl
-    y2 = numpy.sin(numpy.pi / 2 - (2 * numpy.pi / 5)) * rl
-    x3 = numpy.sin(numpy.pi - 2 * (2 * numpy.pi / 5)) * rl
-    y3 = numpy.cos(numpy.pi - 2 * (2 * numpy.pi / 5)) * rl
-    x4 = numpy.sin(numpy.pi / 5) * rl
-    y4 = numpy.cos(numpy.pi / 5) * rl
-    x5 = numpy.cos((3 * numpy.pi / 5) - (numpy.pi / 2)) * rl
-    y5 = numpy.sin((3 * numpy.pi / 5) - (numpy.pi / 2)) * rl
-    zs = numpy.sqrt(el**2 - (el / 2) ** 2)
-    z1 = numpy.sqrt(zs**2 - (rl - y4) ** 2) / 2
-    z2 = numpy.sqrt(el**2 - rl**2)
-    vertices = [
-        (0, 0, z1 + z2),  # a
-        (x2, y2, z1),  # b
-        (x3, -y3, z1),  # c
-        (-x3, -y3, z1),  # d
-        (-x2, y2, z1),  # e
-        (0, rl, z1),  # f
-        (x4, y4, -z1),  # g
-        (x5, -y5, -z1),  # h
-        (0, -rl, -z1),  # k
-        (-x5, -y5, -z1),  # l
-        (-x4, y4, -z1),  # m
-        (0, 0, -z1 + -z2),  # n
-    ]
-    return vertices
-
-
-def get_octahedron_connections():
-    return [
-        [1, 2, 3, 4],
-        [0, 2, 4, 5],
-        [0, 1, 3, 5],
-        [0, 2, 4, 5],
-        [0, 1, 3, 5],
-        [1, 2, 3, 4],
-    ]
-
-
-def get_snub_disphenoid_connections():
-    return [
-        [1, 3, 4, 5],
-        [0, 2, 3, 5],
-        [1, 3, 5, 6, 7],
-        [0, 1, 2, 4, 7],
-        [0, 3, 5, 6, 7],
-        [0, 1, 2, 4, 6],
-        [2, 4, 5, 7],
-        [2, 3, 4, 6],
-    ]
-
-
-def get_gyro_square_bipyramid_connections():
-    return [
-        [1, 2, 3, 4],
-        [0, 2, 4, 5, 6],
-        [0, 1, 3, 6, 7],
-        [0, 2, 4, 7, 8],
-        [0, 1, 3, 5, 8],
-        [1, 4, 6, 8, 9],
-        [1, 2, 5, 7, 9],
-        [2, 3, 6, 8, 9],
-        [3, 4, 5, 7, 9],
-        [5, 6, 7, 8],
-    ]
-
-
-def get_icosahedron_connections():
-    return [
-        [1, 2, 3, 4, 5],
-        [0, 2, 5, 6, 7],
-        [0, 1, 3, 7, 8],
-        [0, 2, 4, 8, 9],
-        [0, 3, 5, 9, 10],
-        [0, 1, 4, 6, 10],
-        [1, 5, 7, 10, 11],
-        [1, 2, 6, 8, 11],
-        [2, 3, 7, 9, 11],
-        [3, 4, 8, 10, 11],
-        [4, 5, 6, 9, 11],
-        [6, 7, 8, 9, 10],
-    ]
-
-
-def get_orientation_codes(with_dots):
-    ordered_orientations_list = [
-        "b3iii",
-        "b3nnn",
-        "b4iiiix",
-        "b4iiiiy",
-        "b4iiin",
-        "b4inin",
-        "b4innn",
-        "b4nnnnx",
-        "b4nnnny",
-        "h4i.n",
-        "l4iin",
-        "l4inn",
-        "b5iiiin",
-        "b5iinin",
-        "b5ininn",
-        "b5innnn",
-        "h5i.i",
-        "h5n.n",
-        "l5iiin",
-        "l5inni",
-        "l5innn",
-        "l5niin",
-        "b6iiniin",
-        "b6ininin",
-        "b6inninn",
-        "h6i.i.i",
-        "h6n.n.n",
-        "l6innni",
-        "l6niiin",
-        "s6",
-    ]
-    if with_dots == False:
-        return [i.replace(".", "_") for i in ordered_orientations_list]
-    elif with_dots == True:
-        return ordered_orientations_list
-
-
-def get_rib_orientations():
-
-    # Get the directory where the current script is located
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # Construct the path to the JSON file
-    json_file_path = os.path.join(current_dir, "top_rib_orientations.json")
-
-    with open(json_file_path, "r") as f:
-        rib_orientations = json.load(f)
-
-    return rib_orientations
+from typing import List, Tuple
+from isambard.specifications.deltaprot_helper import (
+    get_tadas_scores_for_permutation,
+    choose_delta,
+    get_rib_orientations,
+    get_orientation_codes,
+)
 
 
 @dataclasses.dataclass
@@ -321,22 +81,7 @@ class DeltaProt(Assembly):
 
     default_rib_len = 11
     default_aa = 10
-    # problem: will set this value for all of instances of a class
-    # TODO: use clasmethod instead. Or staticmethod?
-
-    choose_delta = {
-        3: gen_octahedron,
-        4: gen_snub_disphenoid,
-        5: gen_gyro_square_bipyramid,
-        6: gen_icosahedron,
-    }
-
-    get_connections = {
-        3: get_octahedron_connections,
-        4: get_snub_disphenoid_connections,
-        5: get_gyro_square_bipyramid_connections,
-        6: get_icosahedron_connections,
-    }
+    # TODO: Remove these completely (I could substitute these in project config  instead)
 
     def __init__(
         self,
@@ -348,6 +93,12 @@ class DeltaProt(Assembly):
 
         super(DeltaProt, self).__init__()  # keep Assembly init and append this init
 
+        assert len(helix_conformations) in [
+            3,
+            4,
+            5,
+            6,
+        ], "number of helix_conformations must be between 3-6. Deltahedron size is prescribed based on this number. Assembling incomplete folds is not yet implemented."
         self.helix_conformations = helix_conformations
         self.rib_len = rib_len if rib_len is not None else self.default_rib_len
         if centre_helices:
@@ -370,6 +121,25 @@ class DeltaProt(Assembly):
 
         self.build()
 
+    def get_tadas_assembly_score(self):
+
+        if self.orientation_code is None:
+            warnings.warn(
+                "Tadas score is only tested for complete Murzin & Finkelstein orientations",
+                UserWarning,
+            )
+
+        ribs_sequence = [
+            helix_conformation.rib_vertices
+            for helix_conformation in self.helix_conformations
+        ]
+
+        # A score for rib arrangement. Order of ribs matter. Direction of ribs matter. Helix axis rotation has no effect.
+        # Inspired by Taylor et al.scoring.
+        # Tadas score can be used to rank permutations of single chain M&F orientations.
+        # Tadas score is not affected by helix rotation as looks to helices simply as ribs in space connected in sequence.
+        return get_tadas_scores_for_permutation(ribs_sequence, self.rib_len)
+
     def helices_edges(self):
         dv = self.deltahedron_vertices()
         helices_edges = []
@@ -390,7 +160,7 @@ class DeltaProt(Assembly):
 
     def deltahedron_vertices(self):
         # Number and length of ribs determine the vertices of the deltaprot shape
-        return self.choose_delta[len(self.helix_conformations)](self.rib_len)
+        return choose_delta[len(self.helix_conformations)](self.rib_len)
 
     @property
     def centre(self):
@@ -483,5 +253,8 @@ class DeltaProt(Assembly):
         return determined_orientation_code
 
 
-__author__ = "Christopher W. Wood"
+__author__ = "Tadas Kluonis"
 __status__ = "Development"
+
+
+############
