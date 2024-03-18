@@ -9,9 +9,10 @@ from ampal.geometry import dihedral
 from typing import List, Tuple
 from isambard.specifications.deltaprot_helper import (
     get_tadas_scores_for_permutation,
-    choose_delta,
+    # choose_delta,
     get_rib_orientations,
     get_orientation_codes,
+    Deltahedron,
 )
 
 
@@ -31,7 +32,7 @@ my_dp = DeltaProt(
         HelixConformation((2, 3), 330.0, 11),
         HelixConformation((4, 5), 330.0, 11),
     ],
-    rib_len=11,
+    edge_length=11,
     centre_helices=True,
     centred_ca=1,
 )
@@ -79,36 +80,48 @@ class DeltaProt(Assembly):
     orientation_codes = get_orientation_codes(with_dots=False)
     orientation_codes_w_dots = get_orientation_codes(with_dots=True)
 
-    default_rib_len = 11
+    default_edge_length = 11
     default_aa = 10
     # TODO: Remove these completely (I could substitute these in project config  instead)
 
     def __init__(
         self,
         helix_conformations: List[HelixConformation],
-        rib_len: float = None,
+        deltahedron_name: str = None,
+        edge_length: float = None,
         centre_helices: bool = True,
         centred_ca: int = 1,
     ):
 
         super(DeltaProt, self).__init__()  # keep Assembly init and append this init
 
-        assert len(helix_conformations) in [
-            3,
-            4,
-            5,
-            6,
-        ], "number of helix_conformations must be between 3-6. Deltahedron size is prescribed based on this number. Assembling incomplete folds is not yet implemented."
         self.helix_conformations = helix_conformations
-        self.rib_len = rib_len if rib_len is not None else self.default_rib_len
+        edge_length = self.default_edge_length if edge_length is None else edge_length
+
+        if deltahedron_name is None:
+            assert len(self.helix_conformations) in [
+                3,
+                4,
+                5,
+                6,
+            ], "Number of HelixConformations passed must be 3-6 if deltahedron_name is not specified."
+            self.deltahedron = Deltahedron.choose_deltahedron_by_rib_number(
+                len(self.helix_conformations), edge_length
+            )
+        else:
+            self.deltahedron = Deltahedron.choose_deltahedron_by_name(
+                deltahedron_name, edge_length
+            )
+
         if centre_helices:
             self.ax_trans_adjust = [
-                (self.rib_len / 2.0)
+                (self.deltahedron.edge_length / 2.0)
                 - (((self.helix_conformations[i].num_amino_acids - 1) * 1.52) / 2.0)
                 for i in range(len(self.helix_conformations))
             ]
         else:
             self.ax_trans_adjust = [0] * len(self.helix_conformations)
+
         self.centred_ca = centred_ca - 1
 
         self.orientation_code = self.determine_orientation_code()
@@ -134,14 +147,12 @@ class DeltaProt(Assembly):
             for helix_conformation in self.helix_conformations
         ]
 
-        # A score for rib arrangement. Order of ribs matter. Direction of ribs matter. Helix axis rotation has no effect.
-        # Inspired by Taylor et al.scoring.
-        # Tadas score can be used to rank permutations of single chain M&F orientations.
-        # Tadas score is not affected by helix rotation as looks to helices simply as ribs in space connected in sequence.
-        return get_tadas_scores_for_permutation(ribs_sequence, self.rib_len)
+        return get_tadas_scores_for_permutation(
+            ribs_sequence, self.deltahedron.edge_length
+        )
 
     def helices_edges(self):
-        dv = self.deltahedron_vertices()
+        dv = self.deltahedron.vertices
         helices_edges = []
         for helix_conformation in self.helix_conformations:
             v1, v2 = helix_conformation.rib_vertices
@@ -149,7 +160,7 @@ class DeltaProt(Assembly):
         return helices_edges
 
     def loops_edges(self):
-        dv = self.deltahedron_vertices()
+        dv = self.deltahedron.vertices
         rib_vertices = self.ribs
         loops_edges = []
         for i in range(len(rib_vertices) - 1):
@@ -158,13 +169,9 @@ class DeltaProt(Assembly):
             loops_edges.append((dv[v2], dv[v1_next]))
         return loops_edges
 
-    def deltahedron_vertices(self):
-        # Number and length of ribs determine the vertices of the deltaprot shape
-        return choose_delta[len(self.helix_conformations)](self.rib_len)
-
     @property
     def centre(self):
-        dv = self.deltahedron_vertices()
+        dv = self.deltahedron.vertices
         centre = sum([numpy.array(x) for x in dv]) / len(dv)
         return centre
 

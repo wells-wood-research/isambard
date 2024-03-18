@@ -11,210 +11,421 @@ import os
 ###########################################################################################
 
 
-def gen_octahedron(el):
-    """Generates vertices of an octahedron with a defined edge length.
+class Deltahedron:
+    def __init__(self, edge_length):
+        self.edge_length = edge_length
+        self.vertices = self.generate_vertices()
+        self.connections = self.generate_connections()
 
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
+    # @staticmethod
+    def choose_deltahedron_by_rib_number(rib_num: int, edge_length: float):
+        assert rib_num in [
+            3,
+            4,
+            5,
+            6,
+        ], "Rib number (alpha helix count) in deltahedron can be 3,4,5,6 which corresponds to Octahedron, SnubDisophenoid, GyroSquareBipyramid, Icosahedron, according to Murzin and Finkelstein model"
+        if rib_num == 3:
+            return Octahedron(
+                edge_length
+            )  # SnubDisophenoid() GyroSquareBipyramid(Deltahedron) Icosahedron(Deltahedron)
+        elif rib_num == 4:
+            return SnubDisophenoid(edge_length)
+        elif rib_num == 5:
+            return GyroSquareBipyramid(edge_length)
+        elif rib_num == 6:
+            return Icosahedron(edge_length)
 
-    Returns
-    -------
-    vertices : [triple]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    xy = np.sin(np.pi / 4) * el
-    vertices = [
-        (0, 0, xy),  # a
-        (0, xy, 0),  # b
-        (xy, 0, 0),  # c
-        (0, -xy, 0),  # d
-        (-xy, 0, 0),  # e
-        (0, 0, -xy),  # f
-    ]
-    return vertices
-
-
-def gen_snub_disphenoid(el):
-    """Generates vertices of a snub-nosed disphenoid with a defined edge length.
-
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
-
-    Returns
-    -------
-    vertices : [triple]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    # -z1 to move gh vector off x axis
-    x2 = 0.644584 * el
-    z1 = 0.578369 * el
-    z2 = 0.989492 * el
-    z3 = 1.56786 * el
-
-    vertices = [
-        (0, el / 2, z3 - z1),  # a
-        (0, -el / 2, z3 - z1),  # b
-        (0, -x2, z1 - z1),  # c
-        (-x2, 0, z2 - z1),  # d
-        (0, x2, z1 - z1),  # e
-        (x2, 0, z2 - z1),  # f
-        (el / 2, 0, 0 - z1),  # g
-        (-el / 2, 0, 0 - z1),  # h
-    ]
-    return vertices
+    def choose_deltahedron_by_name(deltahedron: str, edge_length: float):
+        assert deltahedron.lower() in [
+            "octahedron",
+            "snub_disophenoid",
+            "gyro_square_bipyramid",
+            "icosahedron",
+        ], f'Only {["octahedron", "snub_disophenoid", "gyro_square_bipyramid", "icosahedron"]} deltahedrons are supported.'
+        if deltahedron == "octahedron":
+            return Octahedron(edge_length)
+        elif deltahedron == "snub_disophenoid":
+            return SnubDisophenoid(edge_length)
+        elif deltahedron == "gyro_square_bipyramid":
+            return GyroSquareBipyramid(edge_length)
+        elif deltahedron == "icosahedron":
+            return Icosahedron(edge_length)
 
 
-def gen_gyro_square_bipyramid(el):
-    """Generates vertices of a gyroelongated bipyramid with a defined edge length.
+class Octahedron(Deltahedron):
+    def __init__(self, edge_length):
+        super(Octahedron, self).__init__(edge_length)
+        self.rib_num = 3
+        self.name = "octahedron"
+        return
 
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
+    def generate_vertices(self):
+        el = self.edge_length
+        xy = np.sin(np.pi / 4) * el
+        return [
+            (0, 0, xy),
+            (0, xy, 0),
+            (xy, 0, 0),
+            (0, -xy, 0),
+            (-xy, 0, 0),
+            (0, 0, -xy),
+        ]
 
-    Returns
-    -------
-    vertices : [(float, float, float)]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    rl = (0.5 * el) / np.sin(np.pi / 4)
-    zs = np.sin(np.pi / 3) * el
-    pl = rl - (el / 2)
-    z1 = np.sqrt((zs**2) - (pl**2)) / 2
-    rxy = el / 2
-    theta = np.arccos(rl / el)
-    z2 = np.sin(theta) * el
-    z3 = z1 + z2
-    vertices = [
-        (0, 0, z3),  # a
-        (0, rl, z1),  # b
-        (rl, 0, z1),  # c
-        (0, -rl, z1),  # d
-        (-rl, 0, z1),  # e
-        (-rxy, rxy, -z1),  # f
-        (rxy, rxy, -z1),  # g
-        (rxy, -rxy, -z1),  # h
-        (-rxy, -rxy, -z1),  # k
-        (0, 0, -z3),  # l
-    ]
-    return vertices
+    def generate_connections(self):
+        return [
+            [1, 2, 3, 4],
+            [0, 2, 4, 5],
+            [0, 1, 3, 5],
+            [0, 2, 4, 5],
+            [0, 1, 3, 5],
+            [1, 2, 3, 4],
+        ]
 
 
-def gen_icosahedron(el):
-    """Generates vertices of an icosahedron with a defined edge length.
+class SnubDisophenoid(Deltahedron):
+    def __init__(self, edge_length):
+        super().__init__(edge_length)
+        self.rib_num = 4
+        self.name = "snub_disophenoid"
+        return
 
-    Parameters
-    ----------
-    el : float
-        The edge length of the polyhedron in arbitrary units.
+    def generate_vertices(self):
+        el = self.edge_length
+        # -z1 to move gh vector off x axis
+        x2 = 0.644584 * el
+        z1 = 0.578369 * el
+        z2 = 0.989492 * el
+        z3 = 1.56786 * el
 
-    Returns
-    -------
-    vertices : [(float, float, float)]
-        List containing coordinates of the vertices of the polyhedron.
-    """
-    rl = (el / 2) / np.sin(np.pi / 5)
-    x2 = np.cos(np.pi / 2 - (2 * np.pi / 5)) * rl
-    y2 = np.sin(np.pi / 2 - (2 * np.pi / 5)) * rl
-    x3 = np.sin(np.pi - 2 * (2 * np.pi / 5)) * rl
-    y3 = np.cos(np.pi - 2 * (2 * np.pi / 5)) * rl
-    x4 = np.sin(np.pi / 5) * rl
-    y4 = np.cos(np.pi / 5) * rl
-    x5 = np.cos((3 * np.pi / 5) - (np.pi / 2)) * rl
-    y5 = np.sin((3 * np.pi / 5) - (np.pi / 2)) * rl
-    zs = np.sqrt(el**2 - (el / 2) ** 2)
-    z1 = np.sqrt(zs**2 - (rl - y4) ** 2) / 2
-    z2 = np.sqrt(el**2 - rl**2)
-    vertices = [
-        (0, 0, z1 + z2),  # a
-        (x2, y2, z1),  # b
-        (x3, -y3, z1),  # c
-        (-x3, -y3, z1),  # d
-        (-x2, y2, z1),  # e
-        (0, rl, z1),  # f
-        (x4, y4, -z1),  # g
-        (x5, -y5, -z1),  # h
-        (0, -rl, -z1),  # k
-        (-x5, -y5, -z1),  # l
-        (-x4, y4, -z1),  # m
-        (0, 0, -z1 + -z2),  # n
-    ]
-    return vertices
+        return [
+            (0, el / 2, z3 - z1),  # a
+            (0, -el / 2, z3 - z1),  # b
+            (0, -x2, z1 - z1),  # c
+            (-x2, 0, z2 - z1),  # d
+            (0, x2, z1 - z1),  # e
+            (x2, 0, z2 - z1),  # f
+            (el / 2, 0, 0 - z1),  # g
+            (-el / 2, 0, 0 - z1),  # h
+        ]
+
+    def generate_connections(self):
+        return [
+            [1, 3, 4, 5],
+            [0, 2, 3, 5],
+            [1, 3, 5, 6, 7],
+            [0, 1, 2, 4, 7],
+            [0, 3, 5, 6, 7],
+            [0, 1, 2, 4, 6],
+            [2, 4, 5, 7],
+            [2, 3, 4, 6],
+        ]
 
 
-def get_octahedron_connections():
-    return [
-        [1, 2, 3, 4],
-        [0, 2, 4, 5],
-        [0, 1, 3, 5],
-        [0, 2, 4, 5],
-        [0, 1, 3, 5],
-        [1, 2, 3, 4],
-    ]
+class GyroSquareBipyramid(Deltahedron):
+    def __init__(self, edge_length):
+        super().__init__(edge_length)
+        self.rib_num = 5
+        self.name = "gyro_square_bipyramid"
+        return
+
+    def generate_vertices(self):
+        el = self.edge_length
+        rl = (0.5 * el) / np.sin(np.pi / 4)
+        zs = np.sin(np.pi / 3) * el
+        pl = rl - (el / 2)
+        z1 = np.sqrt((zs**2) - (pl**2)) / 2
+        rxy = el / 2
+        theta = np.arccos(rl / el)
+        z2 = np.sin(theta) * el
+        z3 = z1 + z2
+        vertices = [
+            (0, 0, z3),  # a
+            (0, rl, z1),  # b
+            (rl, 0, z1),  # c
+            (0, -rl, z1),  # d
+            (-rl, 0, z1),  # e
+            (-rxy, rxy, -z1),  # f
+            (rxy, rxy, -z1),  # g
+            (rxy, -rxy, -z1),  # h
+            (-rxy, -rxy, -z1),  # k
+            (0, 0, -z3),  # l
+        ]
+        return vertices
+
+    def generate_connections(self):
+        return [
+            [1, 2, 3, 4],
+            [0, 2, 4, 5, 6],
+            [0, 1, 3, 6, 7],
+            [0, 2, 4, 7, 8],
+            [0, 1, 3, 5, 8],
+            [1, 4, 6, 8, 9],
+            [1, 2, 5, 7, 9],
+            [2, 3, 6, 8, 9],
+            [3, 4, 5, 7, 9],
+            [5, 6, 7, 8],
+        ]
 
 
-def get_snub_disphenoid_connections():
-    return [
-        [1, 3, 4, 5],
-        [0, 2, 3, 5],
-        [1, 3, 5, 6, 7],
-        [0, 1, 2, 4, 7],
-        [0, 3, 5, 6, 7],
-        [0, 1, 2, 4, 6],
-        [2, 4, 5, 7],
-        [2, 3, 4, 6],
-    ]
+class Icosahedron(Deltahedron):
+    def __init__(self, edge_length):
+        super().__init__(edge_length)
+        self.rib_num = 6
+        self.name = "icosahedron"
+        return
+
+    def generate_vertices(self):
+        el = self.edge_length
+        rl = (el / 2) / np.sin(np.pi / 5)
+        x2 = np.cos(np.pi / 2 - (2 * np.pi / 5)) * rl
+        y2 = np.sin(np.pi / 2 - (2 * np.pi / 5)) * rl
+        x3 = np.sin(np.pi - 2 * (2 * np.pi / 5)) * rl
+        y3 = np.cos(np.pi - 2 * (2 * np.pi / 5)) * rl
+        x4 = np.sin(np.pi / 5) * rl
+        y4 = np.cos(np.pi / 5) * rl
+        x5 = np.cos((3 * np.pi / 5) - (np.pi / 2)) * rl
+        y5 = np.sin((3 * np.pi / 5) - (np.pi / 2)) * rl
+        zs = np.sqrt(el**2 - (el / 2) ** 2)
+        z1 = np.sqrt(zs**2 - (rl - y4) ** 2) / 2
+        z2 = np.sqrt(el**2 - rl**2)
+        vertices = [
+            (0, 0, z1 + z2),  # a
+            (x2, y2, z1),  # b
+            (x3, -y3, z1),  # c
+            (-x3, -y3, z1),  # d
+            (-x2, y2, z1),  # e
+            (0, rl, z1),  # f
+            (x4, y4, -z1),  # g
+            (x5, -y5, -z1),  # h
+            (0, -rl, -z1),  # k
+            (-x5, -y5, -z1),  # l
+            (-x4, y4, -z1),  # m
+            (0, 0, -z1 + -z2),  # n
+        ]
+        return vertices
+
+    def generate_connections(self):
+        return [
+            [1, 2, 3, 4, 5],
+            [0, 2, 5, 6, 7],
+            [0, 1, 3, 7, 8],
+            [0, 2, 4, 8, 9],
+            [0, 3, 5, 9, 10],
+            [0, 1, 4, 6, 10],
+            [1, 5, 7, 10, 11],
+            [1, 2, 6, 8, 11],
+            [2, 3, 7, 9, 11],
+            [3, 4, 8, 10, 11],
+            [4, 5, 6, 9, 11],
+            [6, 7, 8, 9, 10],
+        ]
 
 
-def get_gyro_square_bipyramid_connections():
-    return [
-        [1, 2, 3, 4],
-        [0, 2, 4, 5, 6],
-        [0, 1, 3, 6, 7],
-        [0, 2, 4, 7, 8],
-        [0, 1, 3, 5, 8],
-        [1, 4, 6, 8, 9],
-        [1, 2, 5, 7, 9],
-        [2, 3, 6, 8, 9],
-        [3, 4, 5, 7, 9],
-        [5, 6, 7, 8],
-    ]
+# def gen_octahedron(el):
+#     """Generates vertices of an octahedron with a defined edge length.
+
+#     Parameters
+#     ----------
+#     el : float
+#         The edge length of the polyhedron in arbitrary units.
+
+#     Returns
+#     -------
+#     vertices : [triple]
+#         List containing coordinates of the vertices of the polyhedron.
+#     """
+#     xy = np.sin(np.pi / 4) * el
+#     vertices = [
+#         (0, 0, xy),  # a
+#         (0, xy, 0),  # b
+#         (xy, 0, 0),  # c
+#         (0, -xy, 0),  # d
+#         (-xy, 0, 0),  # e
+#         (0, 0, -xy),  # f
+#     ]
+#     return vertices
 
 
-def get_icosahedron_connections():
-    return [
-        [1, 2, 3, 4, 5],
-        [0, 2, 5, 6, 7],
-        [0, 1, 3, 7, 8],
-        [0, 2, 4, 8, 9],
-        [0, 3, 5, 9, 10],
-        [0, 1, 4, 6, 10],
-        [1, 5, 7, 10, 11],
-        [1, 2, 6, 8, 11],
-        [2, 3, 7, 9, 11],
-        [3, 4, 8, 10, 11],
-        [4, 5, 6, 9, 11],
-        [6, 7, 8, 9, 10],
-    ]
+# def gen_snub_disphenoid(el):
+#     """Generates vertices of a snub-nosed disphenoid with a defined edge length.
+
+#     Parameters
+#     ----------
+#     el : float
+#         The edge length of the polyhedron in arbitrary units.
+
+#     Returns
+#     -------
+#     vertices : [triple]
+#         List containing coordinates of the vertices of the polyhedron.
+#     """
+#     # -z1 to move gh vector off x axis
+#     x2 = 0.644584 * el
+#     z1 = 0.578369 * el
+#     z2 = 0.989492 * el
+#     z3 = 1.56786 * el
+
+#     vertices = [
+#         (0, el / 2, z3 - z1),  # a
+#         (0, -el / 2, z3 - z1),  # b
+#         (0, -x2, z1 - z1),  # c
+#         (-x2, 0, z2 - z1),  # d
+#         (0, x2, z1 - z1),  # e
+#         (x2, 0, z2 - z1),  # f
+#         (el / 2, 0, 0 - z1),  # g
+#         (-el / 2, 0, 0 - z1),  # h
+#     ]
+#     return vertices
 
 
-choose_delta = {
-    3: gen_octahedron,
-    4: gen_snub_disphenoid,
-    5: gen_gyro_square_bipyramid,
-    6: gen_icosahedron,
-}
+# def gen_gyro_square_bipyramid(el):
+#     """Generates vertices of a gyroelongated bipyramid with a defined edge length.
 
-get_connections = {
-    3: get_octahedron_connections,
-    4: get_snub_disphenoid_connections,
-    5: get_gyro_square_bipyramid_connections,
-    6: get_icosahedron_connections,
-}
+#     Parameters
+#     ----------
+#     el : float
+#         The edge length of the polyhedron in arbitrary units.
+
+#     Returns
+#     -------
+#     vertices : [(float, float, float)]
+#         List containing coordinates of the vertices of the polyhedron.
+#     """
+#     rl = (0.5 * el) / np.sin(np.pi / 4)
+#     zs = np.sin(np.pi / 3) * el
+#     pl = rl - (el / 2)
+#     z1 = np.sqrt((zs**2) - (pl**2)) / 2
+#     rxy = el / 2
+#     theta = np.arccos(rl / el)
+#     z2 = np.sin(theta) * el
+#     z3 = z1 + z2
+#     vertices = [
+#         (0, 0, z3),  # a
+#         (0, rl, z1),  # b
+#         (rl, 0, z1),  # c
+#         (0, -rl, z1),  # d
+#         (-rl, 0, z1),  # e
+#         (-rxy, rxy, -z1),  # f
+#         (rxy, rxy, -z1),  # g
+#         (rxy, -rxy, -z1),  # h
+#         (-rxy, -rxy, -z1),  # k
+#         (0, 0, -z3),  # l
+#     ]
+#     return vertices
+
+
+# def gen_icosahedron(el):
+#     """Generates vertices of an icosahedron with a defined edge length.
+
+#     Parameters
+#     ----------
+#     el : float
+#         The edge length of the polyhedron in arbitrary units.
+
+#     Returns
+#     -------
+#     vertices : [(float, float, float)]
+#         List containing coordinates of the vertices of the polyhedron.
+#     """
+#     rl = (el / 2) / np.sin(np.pi / 5)
+#     x2 = np.cos(np.pi / 2 - (2 * np.pi / 5)) * rl
+#     y2 = np.sin(np.pi / 2 - (2 * np.pi / 5)) * rl
+#     x3 = np.sin(np.pi - 2 * (2 * np.pi / 5)) * rl
+#     y3 = np.cos(np.pi - 2 * (2 * np.pi / 5)) * rl
+#     x4 = np.sin(np.pi / 5) * rl
+#     y4 = np.cos(np.pi / 5) * rl
+#     x5 = np.cos((3 * np.pi / 5) - (np.pi / 2)) * rl
+#     y5 = np.sin((3 * np.pi / 5) - (np.pi / 2)) * rl
+#     zs = np.sqrt(el**2 - (el / 2) ** 2)
+#     z1 = np.sqrt(zs**2 - (rl - y4) ** 2) / 2
+#     z2 = np.sqrt(el**2 - rl**2)
+#     vertices = [
+#         (0, 0, z1 + z2),  # a
+#         (x2, y2, z1),  # b
+#         (x3, -y3, z1),  # c
+#         (-x3, -y3, z1),  # d
+#         (-x2, y2, z1),  # e
+#         (0, rl, z1),  # f
+#         (x4, y4, -z1),  # g
+#         (x5, -y5, -z1),  # h
+#         (0, -rl, -z1),  # k
+#         (-x5, -y5, -z1),  # l
+#         (-x4, y4, -z1),  # m
+#         (0, 0, -z1 + -z2),  # n
+#     ]
+#     return vertices
+
+
+# def get_octahedron_connections():
+#     return [
+#         [1, 2, 3, 4],
+#         [0, 2, 4, 5],
+#         [0, 1, 3, 5],
+#         [0, 2, 4, 5],
+#         [0, 1, 3, 5],
+#         [1, 2, 3, 4],
+#     ]
+
+
+# def get_snub_disphenoid_connections():
+#     return [
+#         [1, 3, 4, 5],
+#         [0, 2, 3, 5],
+#         [1, 3, 5, 6, 7],
+#         [0, 1, 2, 4, 7],
+#         [0, 3, 5, 6, 7],
+#         [0, 1, 2, 4, 6],
+#         [2, 4, 5, 7],
+#         [2, 3, 4, 6],
+#     ]
+
+
+# def get_gyro_square_bipyramid_connections():
+#     return [
+#         [1, 2, 3, 4],
+#         [0, 2, 4, 5, 6],
+#         [0, 1, 3, 6, 7],
+#         [0, 2, 4, 7, 8],
+#         [0, 1, 3, 5, 8],
+#         [1, 4, 6, 8, 9],
+#         [1, 2, 5, 7, 9],
+#         [2, 3, 6, 8, 9],
+#         [3, 4, 5, 7, 9],
+#         [5, 6, 7, 8],
+#     ]
+
+
+# def get_icosahedron_connections():
+#     return [
+#         [1, 2, 3, 4, 5],
+#         [0, 2, 5, 6, 7],
+#         [0, 1, 3, 7, 8],
+#         [0, 2, 4, 8, 9],
+#         [0, 3, 5, 9, 10],
+#         [0, 1, 4, 6, 10],
+#         [1, 5, 7, 10, 11],
+#         [1, 2, 6, 8, 11],
+#         [2, 3, 7, 9, 11],
+#         [3, 4, 8, 10, 11],
+#         [4, 5, 6, 9, 11],
+#         [6, 7, 8, 9, 10],
+#     ]
+
+
+# choose_delta = {
+#     3: gen_octahedron,
+#     4: gen_snub_disphenoid,
+#     5: gen_gyro_square_bipyramid,
+#     6: gen_icosahedron,
+# }
+
+# get_connections = {
+#     3: get_octahedron_connections,
+#     4: get_snub_disphenoid_connections,
+#     5: get_gyro_square_bipyramid_connections,
+#     6: get_icosahedron_connections,
+# }
 
 
 def get_orientation_codes(with_dots):
@@ -295,19 +506,29 @@ def angle_between_vectors(a, b):
     return round(angle_deg, 1)
 
 
-def get_tadas_scores_for_permutation(ribs, rib_len):
-    assert (
-        len(ribs) >= 3 and len(ribs) <= 6
-    )  # The model supports only 3-6 helix packings
+def get_tadas_scores_for_permutation(ribs: list, rib_len: float):
+    # A score for rib arrangement. Order of ribs matter. Direction of ribs matter. Helix axis rotation has no effect.
+    # Inspired by Taylor et al.scoring.
+    # Tadas score can be used to rank permutations of single chain M&F orientations.
+    # Tadas score is not affected by helix rotation as looks to helices simply as ribs in space connected in sequence.
+
+    # assert (
+    #     len(ribs) >= 3 and len(ribs) <= 6
+    # ), "M&F model supports only 3-6 helix packings"
+
     flattened_list = [val for sublist in ribs for val in sublist]
     assert len(flattened_list) == len(
         set(flattened_list)
-    )  # Assert helices are not overlapping
-    assert len(set(range(len(ribs) * 2))) == len(
-        set(flattened_list)
-    )  # Assert all expected points are present
+    ), "Helices endpoints (rib endpoints) should not be overlapping."
 
-    deltahedron_vertices = choose_delta[len(ribs)](rib_len)
+    # assert len(set(range(len(ribs) * 2))) == len(
+    #     set(flattened_list)
+    # ), "All expected points should be present"
+
+
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        len(ribs), rib_len
+    ).vertices
     taylor_scores = {
         "compared_helix_indexes_ij": [],
         "numeric_packing_descriptors": [],
@@ -476,7 +697,9 @@ def get_taylor_numeric_descriptor(
 def test_get_taylor_numeric_descriptor(rib_len):
     # TODO visually confirm these tests and expand
     rib_num = 6
-    deltahedron_vertices = choose_delta[rib_num](rib_len)
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        rib_num, rib_len
+    ).vertices
     assert (
         get_taylor_numeric_descriptor(
             i_n_index=0,
@@ -490,7 +713,9 @@ def test_get_taylor_numeric_descriptor(rib_len):
     )
 
     rib_num = 5
-    deltahedron_vertices = choose_delta[rib_num](rib_len)
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        rib_num, rib_len
+    ).vertices
     assert (
         get_taylor_numeric_descriptor(
             i_n_index=0,
@@ -505,7 +730,7 @@ def test_get_taylor_numeric_descriptor(rib_len):
 
 
 def find_shortest_path(start, end, deltahedron_vertices, rib_num):
-    connections = get_connections[rib_num]()
+    connections = Deltahedron.choose_deltahedron_by_rib_number(rib_num, 0).connections
 
     visited = [False] * len(deltahedron_vertices)
     steps = [0] * len(
@@ -534,7 +759,9 @@ def find_shortest_path(start, end, deltahedron_vertices, rib_num):
 def test_find_shortest_path(rib_len):
     # Visually confirmed with M&F 1988 paper.
     rib_num = 6
-    deltahedron_vertices = choose_delta[rib_num](rib_len)
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        rib_num, rib_len
+    ).vertices
     assert (
         find_shortest_path(
             start=0, end=11, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
@@ -543,7 +770,9 @@ def test_find_shortest_path(rib_len):
     )
 
     rib_num = 5
-    deltahedron_vertices = choose_delta[rib_num](rib_len)
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        rib_num, rib_len
+    ).vertices
     assert (
         find_shortest_path(
             start=0, end=5, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
@@ -552,7 +781,9 @@ def test_find_shortest_path(rib_len):
     )
 
     rib_num = 4
-    deltahedron_vertices = choose_delta[rib_num](rib_len)
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        rib_num, rib_len
+    ).vertices
     assert (
         find_shortest_path(
             start=0, end=5, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
@@ -561,7 +792,9 @@ def test_find_shortest_path(rib_len):
     )
 
     rib_num = 3
-    deltahedron_vertices = choose_delta[rib_num](rib_len)
+    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
+        rib_num, rib_len
+    ).vertices
     assert (
         find_shortest_path(
             start=0, end=5, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
