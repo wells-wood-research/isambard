@@ -147,9 +147,7 @@ class DeltaProt(Assembly):
             for helix_conformation in self.helix_conformations
         ]
 
-        return get_tadas_scores_for_permutation(
-            ribs_sequence, self.deltahedron.edge_length
-        )
+        return get_tadas_scores_for_permutation(ribs_sequence, self.deltahedron)
 
     def helices_edges(self):
         dv = self.deltahedron.vertices

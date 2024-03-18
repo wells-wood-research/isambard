@@ -506,29 +506,21 @@ def angle_between_vectors(a, b):
     return round(angle_deg, 1)
 
 
-def get_tadas_scores_for_permutation(ribs: list, rib_len: float):
+def get_tadas_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
     # A score for rib arrangement. Order of ribs matter. Direction of ribs matter. Helix axis rotation has no effect.
     # Inspired by Taylor et al.scoring.
     # Tadas score can be used to rank permutations of single chain M&F orientations.
     # Tadas score is not affected by helix rotation as looks to helices simply as ribs in space connected in sequence.
 
-    # assert (
-    #     len(ribs) >= 3 and len(ribs) <= 6
-    # ), "M&F model supports only 3-6 helix packings"
-
     flattened_list = [val for sublist in ribs for val in sublist]
     assert len(flattened_list) == len(
         set(flattened_list)
-    ), "Helices endpoints (rib endpoints) should not be overlapping."
+    ), "Helices endpoints (rib endpoints) should not be overlapping or else scores will end up infinite."
 
-    # assert len(set(range(len(ribs) * 2))) == len(
-    #     set(flattened_list)
-    # ), "All expected points should be present"
+    assert (
+        len(ribs) > 1
+    ), "At least 2 helices (ribs) should be provided as the Tadas' score is evaluating rib interactions."
 
-
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        len(ribs), rib_len
-    ).vertices
     taylor_scores = {
         "compared_helix_indexes_ij": [],
         "numeric_packing_descriptors": [],
@@ -555,10 +547,10 @@ def get_tadas_scores_for_permutation(ribs: list, rib_len: float):
             j_n_index = ribs[j_helix_index][0]  # helix j, N terminus
             j_c_index = ribs[j_helix_index][1]  # helix j, C terminus
 
-            i_n_coords = np.array(deltahedron_vertices[i_n_index])
-            i_c_coords = np.array(deltahedron_vertices[i_c_index])
-            j_n_coords = np.array(deltahedron_vertices[j_n_index])
-            j_c_coords = np.array(deltahedron_vertices[j_c_index])
+            i_n_coords = np.array(deltahedron.vertices[i_n_index])
+            i_c_coords = np.array(deltahedron.vertices[i_c_index])
+            j_n_coords = np.array(deltahedron.vertices[j_n_index])
+            j_c_coords = np.array(deltahedron.vertices[j_c_index])
 
             i_vector = i_c_coords - i_n_coords
             j_vector = j_c_coords - j_n_coords
@@ -569,12 +561,7 @@ def get_tadas_scores_for_permutation(ribs: list, rib_len: float):
 
             # Getting numeric packing descriptors: nn, nc, cn, cc distances will be presented as 1121 for example.
             numeric_descriptor = get_taylor_numeric_descriptor(
-                i_n_index,
-                i_c_index,
-                j_n_index,
-                j_c_index,
-                deltahedron_vertices,
-                len(ribs),
+                i_n_index, i_c_index, j_n_index, j_c_index, deltahedron
             )
             taylor_scores["numeric_packing_descriptors"].append(numeric_descriptor)
 
@@ -600,7 +587,12 @@ def get_tadas_scores_for_permutation(ribs: list, rib_len: float):
 
             # Getting distance_score. Favour close packing
             distance_score = get_distance_score(
-                i_n_coords, i_c_coords, j_n_coords, j_c_coords, parallelism, rib_len
+                i_n_coords,
+                i_c_coords,
+                j_n_coords,
+                j_c_coords,
+                parallelism,
+                deltahedron.edge_length,
             )
             taylor_scores["distance_scores"].append(distance_score)
 
@@ -675,15 +667,15 @@ def get_taylor_letter_from_numeric_descriptor_and_omega(
 
 
 def get_taylor_numeric_descriptor(
-    i_n_index, i_c_index, j_n_index, j_c_index, deltahedron_vertices, rib_num
+    i_n_index, i_c_index, j_n_index, j_c_index, deltahedron
 ):
-    nn = find_shortest_path(i_n_index, j_n_index, deltahedron_vertices, rib_num)
-    nc = find_shortest_path(i_n_index, j_c_index, deltahedron_vertices, rib_num)
-    cn = find_shortest_path(i_c_index, j_n_index, deltahedron_vertices, rib_num)
-    cc = find_shortest_path(i_c_index, j_c_index, deltahedron_vertices, rib_num)
+    nn = find_shortest_path(i_n_index, j_n_index, deltahedron)
+    nc = find_shortest_path(i_n_index, j_c_index, deltahedron)
+    cn = find_shortest_path(i_c_index, j_n_index, deltahedron)
+    cc = find_shortest_path(i_c_index, j_c_index, deltahedron)
 
     assert all(
-        [nn >= 1, nc >= 1, cn >= 1, cc >= 1]
+        [nn >= 0, nc >= 0, cn >= 0, cc >= 0]
     )  # find_shortest_path can output -1 if does not find a path
     assert all(
         [nn <= 3, nc <= 3, cn <= 3, cc <= 3]
@@ -697,46 +689,29 @@ def get_taylor_numeric_descriptor(
 def test_get_taylor_numeric_descriptor(rib_len):
     # TODO visually confirm these tests and expand
     rib_num = 6
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        rib_num, rib_len
-    ).vertices
+    deltahedron = Deltahedron.choose_deltahedron_by_rib_number(rib_num, rib_len)
     assert (
         get_taylor_numeric_descriptor(
-            i_n_index=0,
-            i_c_index=5,
-            j_n_index=11,
-            j_c_index=8,
-            deltahedron_vertices=deltahedron_vertices,
-            rib_num=rib_num,
+            i_n_index=0, i_c_index=5, j_n_index=11, j_c_index=8, deltahedron=deltahedron
         )
         == "3223"
     )
 
     rib_num = 5
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        rib_num, rib_len
-    ).vertices
+    deltahedron = Deltahedron.choose_deltahedron_by_rib_number(rib_num, rib_len)
     assert (
         get_taylor_numeric_descriptor(
-            i_n_index=0,
-            i_c_index=3,
-            j_n_index=7,
-            j_c_index=9,
-            deltahedron_vertices=deltahedron_vertices,
-            rib_num=rib_num,
+            i_n_index=0, i_c_index=3, j_n_index=7, j_c_index=9, deltahedron=deltahedron
         )
         == "2312"
     )
 
 
-def find_shortest_path(start, end, deltahedron_vertices, rib_num):
-    connections = Deltahedron.choose_deltahedron_by_rib_number(rib_num, 0).connections
-
-    visited = [False] * len(deltahedron_vertices)
-    steps = [0] * len(
-        deltahedron_vertices
-    )  # To store the number of steps from start to each vertex
-
+def find_shortest_path(start, end, deltahedron: Deltahedron):
+    connections = deltahedron.connections
+    visited = [False] * len(deltahedron.vertices)
+    # To store the number of steps from start to each vertex
+    steps = [0] * len(deltahedron.vertices)
     queue = [start]
     visited[start] = True
 
@@ -756,51 +731,24 @@ def find_shortest_path(start, end, deltahedron_vertices, rib_num):
     return -1  # Return -1 if there is no path from start to end
 
 
-def test_find_shortest_path(rib_len):
+def test_find_shortest_path():
     # Visually confirmed with M&F 1988 paper.
+    rib_len = 11
     rib_num = 6
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        rib_num, rib_len
-    ).vertices
-    assert (
-        find_shortest_path(
-            start=0, end=11, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
-        )
-        == 3
-    )
+    deltahedron = Deltahedron.choose_deltahedron_by_rib_number(rib_num, rib_len)
+    assert find_shortest_path(start=0, end=11, deltahedron=deltahedron) == 3
 
     rib_num = 5
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        rib_num, rib_len
-    ).vertices
-    assert (
-        find_shortest_path(
-            start=0, end=5, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
-        )
-        == 2
-    )
+    deltahedron = Deltahedron.choose_deltahedron_by_rib_number(rib_num, rib_len)
+    assert find_shortest_path(start=0, end=5, deltahedron=deltahedron) == 2
 
     rib_num = 4
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        rib_num, rib_len
-    ).vertices
-    assert (
-        find_shortest_path(
-            start=0, end=5, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
-        )
-        == 1
-    )
+    deltahedron = Deltahedron.choose_deltahedron_by_rib_number(rib_num, rib_len)
+    assert find_shortest_path(start=0, end=5, deltahedron=deltahedron) == 1
 
     rib_num = 3
-    deltahedron_vertices = Deltahedron.choose_deltahedron_by_rib_number(
-        rib_num, rib_len
-    ).vertices
-    assert (
-        find_shortest_path(
-            start=0, end=5, deltahedron_vertices=deltahedron_vertices, rib_num=rib_num
-        )
-        == 2
-    )
+    deltahedron = Deltahedron.choose_deltahedron_by_rib_number(rib_num, rib_len)
+    assert find_shortest_path(start=0, end=5, deltahedron=deltahedron) == 2
 
 
 def rotate_about_axis(point, axis, angle):
