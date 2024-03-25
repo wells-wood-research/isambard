@@ -6,16 +6,163 @@ import itertools
 import math
 from ampal.geometry import dihedral
 import os
+from scipy.spatial.transform import Rotation as R
+
+import plotly.graph_objects as go
+
 
 ###########################################################################################
 ###########################################################################################
+def custom_formatwarning(message, category, filename, lineno, line=None):
+    return f"\033[93m{category.__name__}: {message}\033[0m\n"
+
+
+def are_ribs_equivalent(ribs1, ribs2, floating_points=3):
+    # Helper function to process each rib
+    def process_rib(rib):
+        # Round the coordinates to mitigate floating-point inaccuracies, convert to tuple for immutability
+        rounded_rib = tuple(
+            sorted(
+                tuple(round(coord, floating_points) for coord in point) for point in rib
+            )
+        )
+        return rounded_rib
+
+    # Process all ribs, sort them to ignore order, and convert to tuple for direct comparison
+    processed_ribs1 = tuple(sorted(process_rib(rib) for rib in ribs1))
+    processed_ribs2 = tuple(sorted(process_rib(rib) for rib in ribs2))
+
+    return processed_ribs1 == processed_ribs2
+
+
+def rotate_point_around_axis(point, axis_point1, axis_point2, angle_deg):
+    # Convert to numpy arrays for easier manipulation
+    point = np.array(point)
+    axis_point1 = np.array(axis_point1)
+    axis_point2 = np.array(axis_point2)
+
+    # Calculate and normalize the rotation axis vector
+    axis_vector = axis_point2 - axis_point1
+    axis_vector_normalized = axis_vector / np.linalg.norm(axis_vector)
+
+    # Translate point to make axis_point1 the origin
+    translated_point = point - axis_point1
+
+    # Create the rotation object and apply rotation
+    rotation = R.from_rotvec(axis_vector_normalized * np.deg2rad(angle_deg))
+    rotated_translated_point = rotation.apply(translated_point)
+
+    # Translate back
+    rotated_point = rotated_translated_point + axis_point1
+
+    return tuple(rotated_point)
+
+
+def rotate_edges(edges, axis_point1, axis_point2, angle):
+    rotated_edges = []
+    for edge in edges:
+        start, end = edge[0], edge[1]
+        rotated_start = rotate_point_around_axis(
+            np.array(start), axis_point1, axis_point2, angle
+        )
+        rotated_end = rotate_point_around_axis(
+            np.array(end), axis_point1, axis_point2, angle
+        )
+        rotated_edges.append((rotated_start, rotated_end))
+    return rotated_edges
+
+
+def get_retained_symmetry_axes(symmetry_axes, helices_edges, vertices):
+    retained_axes = {"C5": [], "C4": [], "C3": [], "C2": []}
+
+    for sym_type, axes in symmetry_axes.items():
+        n_rotamers = int(sym_type[-1])
+        for axis in axes:
+            axis_point1 = np.mean([vertices[i] for i in axis[0]], axis=0)
+            axis_point2 = np.mean([vertices[i] for i in axis[1]], axis=0)
+            angles = np.linspace(0, 360, num=n_rotamers, endpoint=False)[1:]
+            all_matches = True
+            for angle in angles:
+                rotated_edges = rotate_edges(
+                    helices_edges, axis_point1, axis_point2, angle
+                )
+                # Convert edges to a comparable format
+                if not are_ribs_equivalent(helices_edges, rotated_edges):
+                    all_matches = False
+                    # print(
+                    #     f"Ribs not matching, axis{axis} n_rotamers{n_rotamers}, ,angle:{angle}"
+                    # )
+                    break
+
+            if all_matches:
+                retained_axes[sym_type].append(axis)
+
+    return retained_axes
+
+
+def test_deltahedron_symmetry_axes():
+    angles = {"C5": 72, "C4": 90, "C3": 120, "C2": 180}
+    for deltahedron_name in Deltahedron.supported_deltahedrons:
+        delta = Deltahedron.choose_deltahedron_by_name(deltahedron_name, 0.2416416145)
+        symmetry_axes = delta.symmetry_axes
+        vertices = delta.vertices
+        # Define angles for each symmetry type
+        all_symmetries_hold = True
+
+        for sym_type, axes in symmetry_axes.items():
+            for axis_pair in axes:
+                axis_indices_1, axis_indices_2 = axis_pair[0], axis_pair[1]
+                # Calculate axis vector from centroids or direct points
+                v1 = np.mean([vertices[i] for i in axis_indices_1], axis=0)
+
+                if len(axis_indices_2) > 1:
+                    v2 = np.mean([vertices[i] for i in axis_indices_2], axis=0)
+                else:
+                    v2 = np.array(vertices[axis_indices_2[0]])
+
+                rotation_axis = v2 - v1
+
+                # Apply rotation to all vertices and convert to tuples for comparison
+                rotated_vertices = [
+                    rotate_point_around_axis(np.array(v), v2, v1, angles[sym_type])
+                    for v in vertices
+                ]
+
+                # Sort and compare vertices
+                original_sorted = sorted(
+                    [tuple(round(x, 3) for x in v) for v in vertices], key=lambda x: x
+                )
+                rotated_sorted = sorted(
+                    [tuple(round(x, 3) for x in v) for v in rotated_vertices],
+                    key=lambda x: x,
+                )
+
+                if original_sorted != rotated_sorted:
+                    all_symmetries_hold = False
+                    print(
+                        f"Symmetry {sym_type} with axis {axis_pair} at {rotation_axis}. points {v2,v1} does not hold. angle {angles[sym_type]}"
+                    )
+                    break
+
+            if not all_symmetries_hold:
+                break
+
+        assert all_symmetries_hold
 
 
 class Deltahedron:
     def __init__(self, edge_length):
         self.edge_length = edge_length
         self.vertices = self.generate_vertices()
-        self.connections = self.generate_connections()
+        self.connections = self.get_surface_edges_connections()
+        self.symmetry_axes = self.get_symmetry_axes()
+
+    supported_deltahedrons = [
+        "octahedron",
+        "snub_disophenoid",
+        "gyro_square_bipyramid",
+        "icosahedron",
+    ]
 
     # @staticmethod
     def choose_deltahedron_by_rib_number(rib_num: int, edge_length: float):
@@ -37,12 +184,9 @@ class Deltahedron:
             return Icosahedron(edge_length)
 
     def choose_deltahedron_by_name(deltahedron: str, edge_length: float):
-        assert deltahedron.lower() in [
-            "octahedron",
-            "snub_disophenoid",
-            "gyro_square_bipyramid",
-            "icosahedron",
-        ], f'Only {["octahedron", "snub_disophenoid", "gyro_square_bipyramid", "icosahedron"]} deltahedrons are supported.'
+        assert (
+            deltahedron.lower() in self.supported_deltahedrons
+        ), f"Only {self.supported_deltahedrons} deltahedrons are supported."
         if deltahedron == "octahedron":
             return Octahedron(edge_length)
         elif deltahedron == "snub_disophenoid":
@@ -72,7 +216,30 @@ class Octahedron(Deltahedron):
             (0, 0, -xy),
         ]
 
-    def generate_connections(self):
+    def get_symmetry_axes(self):
+        return {
+            "C4": [
+                [[0], [5]],
+                [[1], [3]],
+                [[2], [4]],
+            ],
+            "C3": [
+                [(0, 3, 4), (1, 2, 5)],
+                [(0, 1, 4), (2, 3, 5)],
+                [(0, 2, 3), (1, 4, 5)],
+                [(0, 1, 2), (3, 4, 5)],
+            ],
+            "C2": [
+                [(0, 1), (3, 5)],
+                [(0, 2), (4, 5)],
+                [(0, 3), (1, 5)],
+                [(0, 4), (2, 5)],
+                [(1, 2), (4, 3)],
+                [(2, 3), (1, 4)],
+            ],
+        }
+
+    def get_surface_edges_connections(self):
         return [
             [1, 2, 3, 4],
             [0, 2, 4, 5],
@@ -109,7 +276,16 @@ class SnubDisophenoid(Deltahedron):
             (-el / 2, 0, 0 - z1),  # h
         ]
 
-    def generate_connections(self):
+    def get_symmetry_axes(self):
+        return {
+            "C2": [
+                [(0, 1), (6, 7)],
+                [(2, 5), (3, 4)],
+                [(2, 3), (4, 5)],
+            ],
+        }
+
+    def get_surface_edges_connections(self):
         return [
             [1, 3, 4, 5],
             [0, 2, 3, 5],
@@ -153,7 +329,20 @@ class GyroSquareBipyramid(Deltahedron):
         ]
         return vertices
 
-    def generate_connections(self):
+    def get_symmetry_axes(self):
+        return {
+            "C4": [
+                [[0], [9]],
+            ],
+            "C2": [
+                [(1, 5), (3, 7)],
+                [(1, 6), (3, 8)],
+                [(2, 6), (4, 8)],
+                [(2, 7), (4, 5)],
+            ],
+        }
+
+    def get_surface_edges_connections(self):
         return [
             [1, 2, 3, 4],
             [0, 2, 4, 5, 6],
@@ -205,7 +394,48 @@ class Icosahedron(Deltahedron):
         ]
         return vertices
 
-    def generate_connections(self):
+    def get_symmetry_axes(self):
+        return {
+            "C5": [
+                ([0], [11]),
+                ([1], [9]),
+                ([2], [10]),
+                ([3], [6]),
+                ([4], [7]),
+                ([5], [8]),
+            ],
+            "C3": [
+                [(1, 5, 6), (3, 8, 9)],
+                [(1, 6, 7), (3, 4, 9)],
+                [(2, 7, 8), (4, 5, 10)],
+                [(1, 2, 7), (4, 9, 10)],
+                [(2, 3, 8), (5, 6, 10)],
+                [(0, 1, 2), (9, 10, 11)],
+                [(0, 1, 5), (8, 9, 11)],
+                [(0, 4, 5), (7, 8, 11)],
+                [(0, 2, 3), (6, 10, 11)],
+                [(0, 3, 4), (6, 7, 11)],
+            ],
+            "C2": [
+                [(0, 4), (7, 11)],
+                [(0, 1), (9, 11)],
+                [(2, 8), (5, 10)],
+                [(1, 2), (9, 10)],
+                [(2, 7), (4, 10)],
+                [(2, 3), (6, 10)],
+                [(3, 8), (5, 6)],
+                [(1, 5), (8, 9)],
+                [(1, 7), (4, 9)],
+                [(0, 2), (10, 11)],
+                [(0, 5), (8, 11)],
+                [(3, 4), (6, 7)],
+                [(1, 6), (3, 9)],
+                [(0, 3), (6, 11)],
+                [(4, 5), (7, 8)],
+            ],
+        }
+
+    def get_surface_edges_connections(self):
         return [
             [1, 2, 3, 4, 5],
             [0, 2, 5, 6, 7],
@@ -220,212 +450,6 @@ class Icosahedron(Deltahedron):
             [4, 5, 6, 9, 11],
             [6, 7, 8, 9, 10],
         ]
-
-
-# def gen_octahedron(el):
-#     """Generates vertices of an octahedron with a defined edge length.
-
-#     Parameters
-#     ----------
-#     el : float
-#         The edge length of the polyhedron in arbitrary units.
-
-#     Returns
-#     -------
-#     vertices : [triple]
-#         List containing coordinates of the vertices of the polyhedron.
-#     """
-#     xy = np.sin(np.pi / 4) * el
-#     vertices = [
-#         (0, 0, xy),  # a
-#         (0, xy, 0),  # b
-#         (xy, 0, 0),  # c
-#         (0, -xy, 0),  # d
-#         (-xy, 0, 0),  # e
-#         (0, 0, -xy),  # f
-#     ]
-#     return vertices
-
-
-# def gen_snub_disphenoid(el):
-#     """Generates vertices of a snub-nosed disphenoid with a defined edge length.
-
-#     Parameters
-#     ----------
-#     el : float
-#         The edge length of the polyhedron in arbitrary units.
-
-#     Returns
-#     -------
-#     vertices : [triple]
-#         List containing coordinates of the vertices of the polyhedron.
-#     """
-#     # -z1 to move gh vector off x axis
-#     x2 = 0.644584 * el
-#     z1 = 0.578369 * el
-#     z2 = 0.989492 * el
-#     z3 = 1.56786 * el
-
-#     vertices = [
-#         (0, el / 2, z3 - z1),  # a
-#         (0, -el / 2, z3 - z1),  # b
-#         (0, -x2, z1 - z1),  # c
-#         (-x2, 0, z2 - z1),  # d
-#         (0, x2, z1 - z1),  # e
-#         (x2, 0, z2 - z1),  # f
-#         (el / 2, 0, 0 - z1),  # g
-#         (-el / 2, 0, 0 - z1),  # h
-#     ]
-#     return vertices
-
-
-# def gen_gyro_square_bipyramid(el):
-#     """Generates vertices of a gyroelongated bipyramid with a defined edge length.
-
-#     Parameters
-#     ----------
-#     el : float
-#         The edge length of the polyhedron in arbitrary units.
-
-#     Returns
-#     -------
-#     vertices : [(float, float, float)]
-#         List containing coordinates of the vertices of the polyhedron.
-#     """
-#     rl = (0.5 * el) / np.sin(np.pi / 4)
-#     zs = np.sin(np.pi / 3) * el
-#     pl = rl - (el / 2)
-#     z1 = np.sqrt((zs**2) - (pl**2)) / 2
-#     rxy = el / 2
-#     theta = np.arccos(rl / el)
-#     z2 = np.sin(theta) * el
-#     z3 = z1 + z2
-#     vertices = [
-#         (0, 0, z3),  # a
-#         (0, rl, z1),  # b
-#         (rl, 0, z1),  # c
-#         (0, -rl, z1),  # d
-#         (-rl, 0, z1),  # e
-#         (-rxy, rxy, -z1),  # f
-#         (rxy, rxy, -z1),  # g
-#         (rxy, -rxy, -z1),  # h
-#         (-rxy, -rxy, -z1),  # k
-#         (0, 0, -z3),  # l
-#     ]
-#     return vertices
-
-
-# def gen_icosahedron(el):
-#     """Generates vertices of an icosahedron with a defined edge length.
-
-#     Parameters
-#     ----------
-#     el : float
-#         The edge length of the polyhedron in arbitrary units.
-
-#     Returns
-#     -------
-#     vertices : [(float, float, float)]
-#         List containing coordinates of the vertices of the polyhedron.
-#     """
-#     rl = (el / 2) / np.sin(np.pi / 5)
-#     x2 = np.cos(np.pi / 2 - (2 * np.pi / 5)) * rl
-#     y2 = np.sin(np.pi / 2 - (2 * np.pi / 5)) * rl
-#     x3 = np.sin(np.pi - 2 * (2 * np.pi / 5)) * rl
-#     y3 = np.cos(np.pi - 2 * (2 * np.pi / 5)) * rl
-#     x4 = np.sin(np.pi / 5) * rl
-#     y4 = np.cos(np.pi / 5) * rl
-#     x5 = np.cos((3 * np.pi / 5) - (np.pi / 2)) * rl
-#     y5 = np.sin((3 * np.pi / 5) - (np.pi / 2)) * rl
-#     zs = np.sqrt(el**2 - (el / 2) ** 2)
-#     z1 = np.sqrt(zs**2 - (rl - y4) ** 2) / 2
-#     z2 = np.sqrt(el**2 - rl**2)
-#     vertices = [
-#         (0, 0, z1 + z2),  # a
-#         (x2, y2, z1),  # b
-#         (x3, -y3, z1),  # c
-#         (-x3, -y3, z1),  # d
-#         (-x2, y2, z1),  # e
-#         (0, rl, z1),  # f
-#         (x4, y4, -z1),  # g
-#         (x5, -y5, -z1),  # h
-#         (0, -rl, -z1),  # k
-#         (-x5, -y5, -z1),  # l
-#         (-x4, y4, -z1),  # m
-#         (0, 0, -z1 + -z2),  # n
-#     ]
-#     return vertices
-
-
-# def get_octahedron_connections():
-#     return [
-#         [1, 2, 3, 4],
-#         [0, 2, 4, 5],
-#         [0, 1, 3, 5],
-#         [0, 2, 4, 5],
-#         [0, 1, 3, 5],
-#         [1, 2, 3, 4],
-#     ]
-
-
-# def get_snub_disphenoid_connections():
-#     return [
-#         [1, 3, 4, 5],
-#         [0, 2, 3, 5],
-#         [1, 3, 5, 6, 7],
-#         [0, 1, 2, 4, 7],
-#         [0, 3, 5, 6, 7],
-#         [0, 1, 2, 4, 6],
-#         [2, 4, 5, 7],
-#         [2, 3, 4, 6],
-#     ]
-
-
-# def get_gyro_square_bipyramid_connections():
-#     return [
-#         [1, 2, 3, 4],
-#         [0, 2, 4, 5, 6],
-#         [0, 1, 3, 6, 7],
-#         [0, 2, 4, 7, 8],
-#         [0, 1, 3, 5, 8],
-#         [1, 4, 6, 8, 9],
-#         [1, 2, 5, 7, 9],
-#         [2, 3, 6, 8, 9],
-#         [3, 4, 5, 7, 9],
-#         [5, 6, 7, 8],
-#     ]
-
-
-# def get_icosahedron_connections():
-#     return [
-#         [1, 2, 3, 4, 5],
-#         [0, 2, 5, 6, 7],
-#         [0, 1, 3, 7, 8],
-#         [0, 2, 4, 8, 9],
-#         [0, 3, 5, 9, 10],
-#         [0, 1, 4, 6, 10],
-#         [1, 5, 7, 10, 11],
-#         [1, 2, 6, 8, 11],
-#         [2, 3, 7, 9, 11],
-#         [3, 4, 8, 10, 11],
-#         [4, 5, 6, 9, 11],
-#         [6, 7, 8, 9, 10],
-#     ]
-
-
-# choose_delta = {
-#     3: gen_octahedron,
-#     4: gen_snub_disphenoid,
-#     5: gen_gyro_square_bipyramid,
-#     6: gen_icosahedron,
-# }
-
-# get_connections = {
-#     3: get_octahedron_connections,
-#     4: get_snub_disphenoid_connections,
-#     5: get_gyro_square_bipyramid_connections,
-#     6: get_icosahedron_connections,
-# }
 
 
 def get_orientation_codes(with_dots):
@@ -707,7 +731,7 @@ def test_get_taylor_numeric_descriptor(rib_len):
     )
 
 
-def find_shortest_path(start, end, deltahedron: Deltahedron):
+def find_shortest_path(start: int, end: int, deltahedron: Deltahedron):
     connections = deltahedron.connections
     visited = [False] * len(deltahedron.vertices)
     # To store the number of steps from start to each vertex

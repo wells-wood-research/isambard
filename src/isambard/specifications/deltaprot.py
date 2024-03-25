@@ -13,7 +13,13 @@ from isambard.specifications.deltaprot_helper import (
     get_rib_orientations,
     get_orientation_codes,
     Deltahedron,
+    find_shortest_path,
+    custom_formatwarning,
+    get_retained_symmetry_axes,
 )
+
+
+warnings.formatwarning = custom_formatwarning
 
 
 @dataclasses.dataclass
@@ -125,6 +131,24 @@ class DeltaProt(Assembly):
         self.centred_ca = centred_ca - 1
 
         self.orientation_code = self.determine_orientation_code()
+
+        self.check_assembly_quality()
+
+        self.build()
+
+    def get_directionless_rib_symmetry(self):
+        # Ignores miror, improper rotations, inversions as they dont make sense for a chiral helix.
+        # Only looks at rotational symmetries
+        # Assumes that assembly symmetry will be a subset of deltahedron symmetry.
+        return get_retained_symmetry_axes(
+            self.deltahedron.symmetry_axes,
+            self.helices_edges(),
+            self.deltahedron.vertices,
+        )
+
+    def check_assembly_quality(self):
+
+        # Report what orientation code was built if any.
         if self.orientation_code is not None:
             print(
                 f"Created an assembly with Murzin & Finkelstein orientation code '{self.orientation_code}'"
@@ -132,7 +156,27 @@ class DeltaProt(Assembly):
         else:
             print(f"Created an assembly with unknown orientation")
 
-        self.build()
+        # Warn if any of the ribs are not on the surface of deltahedron
+        if not all(
+            find_shortest_path(
+                conf.rib_vertices[0], conf.rib_vertices[1], self.deltahedron
+            )
+            == 1
+            for conf in self.helix_conformations
+        ):
+            warnings.warn(
+                "There are ribs crossing the core of deltahedron. All ribs should lie on the surface.",
+                UserWarning,
+            )
+
+        vertice_list = [
+            vertex for conf in self.helix_conformations for vertex in conf.rib_vertices
+        ]
+        if len(vertice_list) != len(set(vertice_list)):
+            warnings.warn(
+                "There are overlapping helix enpoints (rib vertices).",
+                UserWarning,
+            )
 
     def get_tadas_assembly_score(self):
 
@@ -150,27 +194,39 @@ class DeltaProt(Assembly):
         return get_tadas_scores_for_permutation(ribs_sequence, self.deltahedron)
 
     def helices_edges(self):
-        dv = self.deltahedron.vertices
         helices_edges = []
         for helix_conformation in self.helix_conformations:
             v1, v2 = helix_conformation.rib_vertices
-            helices_edges.append((dv[v1], dv[v2]))
+            alowed_indices = range(len(self.deltahedron.vertices))
+            assert (
+                v1 in alowed_indices and v2 in alowed_indices
+            ), f"rib vertices {v1} and {v2} in helix conformations must be in range of {self.deltahedron.name} vertices indices {alowed_indices[0]}-{alowed_indices[-1]}"
+            try:
+                helices_edges.append(
+                    (self.deltahedron.vertices[v1], self.deltahedron.vertices[v2])
+                )
+            except IndexError as e:
+                e
         return helices_edges
 
     def loops_edges(self):
-        dv = self.deltahedron.vertices
-        rib_vertices = self.ribs
         loops_edges = []
-        for i in range(len(rib_vertices) - 1):
-            v1, v2 = rib_vertices[i]
-            v1_next, v2_next = rib_vertices[i + 1]
-            loops_edges.append((dv[v2], dv[v1_next]))
+        for i in range(len(self.helix_conformations) - 1):
+            v1, v2 = self.helix_conformations[i].rib_vertices
+            v1_next, v2_next = self.helix_conformations[i + 1].rib_vertices
+            # for i in range(len(rib_vertices) - 1):
+            #     v1, v2 = rib_vertices[i]
+            #     v1_next, v2_next = rib_vertices[i + 1]
+            loops_edges.append(
+                (self.deltahedron.vertices[v2], self.deltahedron.vertices[v1_next])
+            )
         return loops_edges
 
     @property
     def centre(self):
-        dv = self.deltahedron.vertices
-        centre = sum([numpy.array(x) for x in dv]) / len(dv)
+        centre = sum([numpy.array(x) for x in self.deltahedron.vertices]) / len(
+            self.deltahedron.vertices
+        )
         return centre
 
     def build(self):
@@ -214,6 +270,7 @@ class DeltaProt(Assembly):
             old._monomers = new._monomers
 
     def determine_orientation_code(self):
+        # TODO: this implementation is ignorant of deltahedron symmetry.
         orientation_codes_sorted_ribs = {
             "b3iii": [(0, 1), (2, 3), (4, 5)],
             "b3nnn": [(0, 2), (1, 4), (3, 5)],
@@ -258,8 +315,15 @@ class DeltaProt(Assembly):
         return determined_orientation_code
 
 
+# my_dp = DeltaProt(
+#     [
+#         HelixConformation((1, 2), 330, 10),
+#         HelixConformation((3, 4), 330, 10),
+#         HelixConformation((4, 11), 330, 10),
+#     ],
+#     deltahedron_name="icosahedron",
+# )
+
+
 __author__ = "Tadas Kluonis"
 __status__ = "Development"
-
-
-############
