@@ -72,12 +72,27 @@ def rotate_edges(edges, axis_point1, axis_point2, angle):
     return rotated_edges
 
 
-def get_retained_symmetry_axes(symmetry_axes, helices_edges, vertices):
+def get_retained_symmetry_axes(
+    helix_conformations, symmetry_axes, helices_edges, vertices
+):
+    sorted_helix_edge_indices = [
+        tuple(sorted(helix_conformation.rib_vertices))
+        for helix_conformation in helix_conformations
+    ]
+
     retained_axes = {"C5": [], "C4": [], "C3": [], "C2": []}
 
     for sym_type, axes in symmetry_axes.items():
         n_rotamers = int(sym_type[-1])
         for axis in axes:
+
+            if (
+                axis[0] in sorted_helix_edge_indices
+                or axis[1] in sorted_helix_edge_indices
+            ):
+                # when cyclic axis goes through the middle of helix edge, it will flip the helix and think this is symmetric.
+                # we need to ignore this case as the helix is not the same after flipping.
+                continue
             axis_point1 = np.mean([vertices[i] for i in axis[0]], axis=0)
             axis_point2 = np.mean([vertices[i] for i in axis[1]], axis=0)
             angles = np.linspace(0, 360, num=n_rotamers, endpoint=False)[1:]
@@ -151,21 +166,22 @@ def test_deltahedron_symmetry_axes():
 
 
 class Deltahedron:
-    def __init__(self, edge_length):
-        self.edge_length = edge_length
-        self.vertices = self.generate_vertices()
-        self.connections = self.get_surface_edges_connections()
-        self.symmetry_axes = self.get_symmetry_axes()
 
     supported_deltahedrons = [
         "octahedron",
-        "snub_disophenoid",
+        "snub_disphenoid",
         "gyro_square_bipyramid",
         "icosahedron",
     ]
 
-    # @staticmethod
-    def choose_deltahedron_by_rib_number(rib_num: int, edge_length: float):
+    def __init__(self, edge_length):
+        self.name = None
+        self.edge_length = edge_length
+        self.vertices = self.generate_vertices()
+        self.symmetry_axes = self.get_symmetry_axes()
+
+    @classmethod
+    def choose_deltahedron_by_rib_number(cls, rib_num: int, edge_length: float):
         assert rib_num in [
             3,
             4,
@@ -183,18 +199,29 @@ class Deltahedron:
         elif rib_num == 6:
             return Icosahedron(edge_length)
 
-    def choose_deltahedron_by_name(deltahedron: str, edge_length: float):
+    @classmethod
+    def choose_deltahedron_by_name(cls, deltahedron_name: str, edge_length: float):
         assert (
-            deltahedron.lower() in self.supported_deltahedrons
-        ), f"Only {self.supported_deltahedrons} deltahedrons are supported."
-        if deltahedron == "octahedron":
+            deltahedron_name in cls.supported_deltahedrons
+        ), f"Only {cls.supported_deltahedrons} deltahedrons are supported."
+        if deltahedron_name == "octahedron":
             return Octahedron(edge_length)
-        elif deltahedron == "snub_disophenoid":
+        elif deltahedron_name == "snub_disphenoid":
             return SnubDisophenoid(edge_length)
-        elif deltahedron == "gyro_square_bipyramid":
+        elif deltahedron_name == "gyro_square_bipyramid":
             return GyroSquareBipyramid(edge_length)
-        elif deltahedron == "icosahedron":
+        elif deltahedron_name == "icosahedron":
             return Icosahedron(edge_length)
+
+    def generate_connections(self, ignore_direction=False):
+        connections = []
+        for vertex_index, connected_vertices in enumerate(self.connection_matrix):
+            for connected_vertex in connected_vertices:
+                if ignore_direction and vertex_index < connected_vertex:
+                    connections.append([vertex_index, connected_vertex])
+                elif not ignore_direction:
+                    connections.append([vertex_index, connected_vertex])
+        return connections
 
 
 class Octahedron(Deltahedron):
@@ -239,22 +266,21 @@ class Octahedron(Deltahedron):
             ],
         }
 
-    def get_surface_edges_connections(self):
-        return [
-            [1, 2, 3, 4],
-            [0, 2, 4, 5],
-            [0, 1, 3, 5],
-            [0, 2, 4, 5],
-            [0, 1, 3, 5],
-            [1, 2, 3, 4],
-        ]
+    connection_matrix = [
+        [1, 2, 3, 4],
+        [0, 2, 4, 5],
+        [0, 1, 3, 5],
+        [0, 2, 4, 5],
+        [0, 1, 3, 5],
+        [1, 2, 3, 4],
+    ]
 
 
 class SnubDisophenoid(Deltahedron):
     def __init__(self, edge_length):
         super().__init__(edge_length)
         self.rib_num = 4
-        self.name = "snub_disophenoid"
+        self.name = "snub_disphenoid"
         return
 
     def generate_vertices(self):
@@ -285,17 +311,16 @@ class SnubDisophenoid(Deltahedron):
             ],
         }
 
-    def get_surface_edges_connections(self):
-        return [
-            [1, 3, 4, 5],
-            [0, 2, 3, 5],
-            [1, 3, 5, 6, 7],
-            [0, 1, 2, 4, 7],
-            [0, 3, 5, 6, 7],
-            [0, 1, 2, 4, 6],
-            [2, 4, 5, 7],
-            [2, 3, 4, 6],
-        ]
+    connection_matrix = [
+        [1, 3, 4, 5],
+        [0, 2, 3, 5],
+        [1, 3, 5, 6, 7],
+        [0, 1, 2, 4, 7],
+        [0, 3, 5, 6, 7],
+        [0, 1, 2, 4, 6],
+        [2, 4, 5, 7],
+        [2, 3, 4, 6],
+    ]
 
 
 class GyroSquareBipyramid(Deltahedron):
@@ -342,19 +367,18 @@ class GyroSquareBipyramid(Deltahedron):
             ],
         }
 
-    def get_surface_edges_connections(self):
-        return [
-            [1, 2, 3, 4],
-            [0, 2, 4, 5, 6],
-            [0, 1, 3, 6, 7],
-            [0, 2, 4, 7, 8],
-            [0, 1, 3, 5, 8],
-            [1, 4, 6, 8, 9],
-            [1, 2, 5, 7, 9],
-            [2, 3, 6, 8, 9],
-            [3, 4, 5, 7, 9],
-            [5, 6, 7, 8],
-        ]
+    connection_matrix = [
+        [1, 2, 3, 4],
+        [0, 2, 4, 5, 6],
+        [0, 1, 3, 6, 7],
+        [0, 2, 4, 7, 8],
+        [0, 1, 3, 5, 8],
+        [1, 4, 6, 8, 9],
+        [1, 2, 5, 7, 9],
+        [2, 3, 6, 8, 9],
+        [3, 4, 5, 7, 9],
+        [5, 6, 7, 8],
+    ]
 
 
 class Icosahedron(Deltahedron):
@@ -435,21 +459,20 @@ class Icosahedron(Deltahedron):
             ],
         }
 
-    def get_surface_edges_connections(self):
-        return [
-            [1, 2, 3, 4, 5],
-            [0, 2, 5, 6, 7],
-            [0, 1, 3, 7, 8],
-            [0, 2, 4, 8, 9],
-            [0, 3, 5, 9, 10],
-            [0, 1, 4, 6, 10],
-            [1, 5, 7, 10, 11],
-            [1, 2, 6, 8, 11],
-            [2, 3, 7, 9, 11],
-            [3, 4, 8, 10, 11],
-            [4, 5, 6, 9, 11],
-            [6, 7, 8, 9, 10],
-        ]
+    connection_matrix = [
+        [1, 2, 3, 4, 5],
+        [0, 2, 5, 6, 7],
+        [0, 1, 3, 7, 8],
+        [0, 2, 4, 8, 9],
+        [0, 3, 5, 9, 10],
+        [0, 1, 4, 6, 10],
+        [1, 5, 7, 10, 11],
+        [1, 2, 6, 8, 11],
+        [2, 3, 7, 9, 11],
+        [3, 4, 8, 10, 11],
+        [4, 5, 6, 9, 11],
+        [6, 7, 8, 9, 10],
+    ]
 
 
 def get_orientation_codes(with_dots):
@@ -530,11 +553,11 @@ def angle_between_vectors(a, b):
     return round(angle_deg, 1)
 
 
-def get_tadas_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
+def get_path_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
     # A score for rib arrangement. Order of ribs matter. Direction of ribs matter. Helix axis rotation has no effect.
     # Inspired by Taylor et al.scoring.
-    # Tadas score can be used to rank permutations of single chain M&F orientations.
-    # Tadas score is not affected by helix rotation as looks to helices simply as ribs in space connected in sequence.
+    # path score can be used to rank permutations of single chain M&F orientations.
+    # path score is not affected by helix rotation as looks to helices simply as ribs in space connected in sequence.
 
     flattened_list = [val for sublist in ribs for val in sublist]
     assert len(flattened_list) == len(
@@ -543,7 +566,7 @@ def get_tadas_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
 
     assert (
         len(ribs) > 1
-    ), "At least 2 helices (ribs) should be provided as the Tadas' score is evaluating rib interactions."
+    ), "At least 2 helices (ribs) should be provided as the path' score is evaluating rib interactions."
 
     taylor_scores = {
         "compared_helix_indexes_ij": [],
@@ -552,7 +575,7 @@ def get_tadas_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
         "chothia_omega_angles": [],
         "taylor_letter_packing_descriptors": [],
         "distance_scores": [],
-        "dihedral_angles": [],
+        # "dihedral_angles": [],
         "orientation_scores": [],
         "sequence_proximity": [],
         "combined_helix_pair_scores": [],
@@ -620,10 +643,10 @@ def get_tadas_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
             )
             taylor_scores["distance_scores"].append(distance_score)
 
-            dihedral_angle = get_dihedral_angle(
-                i_n_coords, i_c_coords, j_n_coords, j_c_coords
-            )
-            taylor_scores["dihedral_angles"].append(dihedral_angle)
+            # dihedral_angle = get_dihedral_angle(
+            #     i_n_coords, i_c_coords, j_n_coords, j_c_coords
+            # )
+            # taylor_scores["dihedral_angles"].append(dihedral_angle)
 
             # Punishing paralel and favouring antiparalel
             # TODO: check if dihedral angle is any better to use instead of angle_between_rib_vectors
@@ -651,10 +674,10 @@ def get_tadas_scores_for_permutation(ribs: list, deltahedron: Deltahedron):
     return taylor_scores
 
 
-def test_get_tadas_scores_for_permutation():
+def test_get_path_scores_for_permutation():
     # TODO complete the test once confident it is working
     ribs = [[0, 1], [2, 3], [4, 5]]
-    taylor_scores = get_tadas_scores_for_permutation(ribs)
+    taylor_scores = get_path_scores_for_permutation(ribs)
     # assert ...
 
 
@@ -732,7 +755,7 @@ def test_get_taylor_numeric_descriptor(rib_len):
 
 
 def find_shortest_path(start: int, end: int, deltahedron: Deltahedron):
-    connections = deltahedron.connections
+    connections = deltahedron.connection_matrix
     visited = [False] * len(deltahedron.vertices)
     # To store the number of steps from start to each vertex
     steps = [0] * len(deltahedron.vertices)
@@ -941,6 +964,7 @@ def get_distance_score(
     # Minimal distance between longitudinal interaction (parallel/antiparalel) will be 1. Suboptimal distances will result in >1
 
     # TODO could plot over multiple rib lengths deltaprots to see how the score behaves
+    # TODO instead of - rib_len should have /2 ? will have same effect if distance_score is minimal.
     if parallelism == "parallel":
         # nn + cc - d
         distance_score = (

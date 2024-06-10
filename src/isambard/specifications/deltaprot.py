@@ -8,7 +8,7 @@ from isambard.specifications.helix import Helix
 from ampal.geometry import dihedral
 from typing import List, Tuple
 from isambard.specifications.deltaprot_helper import (
-    get_tadas_scores_for_permutation,
+    get_path_scores_for_permutation,
     # choose_delta,
     get_rib_orientations,
     get_orientation_codes,
@@ -138,9 +138,10 @@ class DeltaProt(Assembly):
 
     def get_directionless_rib_symmetry(self):
         # Ignores miror, improper rotations, inversions as they dont make sense for a chiral helix.
-        # Only looks at rotational symmetries
-        # Assumes that assembly symmetry will be a subset of deltahedron symmetry.
+        # Only looks at cyclic rotational symmetries
+        # Assumes that assembly symmetry will be a subset of deltahedron symmetry as the helices touch every vertex of deltahedron
         return get_retained_symmetry_axes(
+            self.helix_conformations,
             self.deltahedron.symmetry_axes,
             self.helices_edges(),
             self.deltahedron.vertices,
@@ -178,11 +179,11 @@ class DeltaProt(Assembly):
                 UserWarning,
             )
 
-    def get_tadas_assembly_score(self):
+    def get_path_assembly_score(self):
 
         if self.orientation_code is None:
             warnings.warn(
-                "Tadas score is only tested for complete Murzin & Finkelstein orientations",
+                "path score is only tested for complete Murzin & Finkelstein orientations",
                 UserWarning,
             )
 
@@ -191,7 +192,7 @@ class DeltaProt(Assembly):
             for helix_conformation in self.helix_conformations
         ]
 
-        return get_tadas_scores_for_permutation(ribs_sequence, self.deltahedron)
+        return get_path_scores_for_permutation(ribs_sequence, self.deltahedron)
 
     def helices_edges(self):
         helices_edges = []
