@@ -24,7 +24,9 @@ warnings.formatwarning = custom_formatwarning
 
 @dataclasses.dataclass
 class HelixConformation:
-    """Contains parameters for an individual helix of a `DeltaProt`"""
+    """
+    Contains parameters for an individual helix of a `DeltaProt`
+    """
 
     rib_vertices: Tuple[int, int]
     helix_axis_rotation: float
@@ -61,6 +63,8 @@ class DeltaProt(Assembly):
 
     Parameters
     ----------
+    helix_conformations : list
+        List of HelixConformation objects. Order of the list determines the N-C order of the helices in the assembly.
     conformation : string
         String describing the deltaprot form to be modelled. See the keys of the rib_orient dictionary for details of
         the various forms available.
@@ -140,10 +144,11 @@ class DeltaProt(Assembly):
         # Ignores miror, improper rotations, inversions as they dont make sense for a chiral helix.
         # Only looks at cyclic rotational symmetries
         # Assumes that assembly symmetry will be a subset of deltahedron symmetry as the helices touch every vertex of deltahedron
+        rib_vertices = [helix_conf.rib_vertices for helix_conf in self.helix_conformations]
         return get_retained_symmetry_axes(
-            self.helix_conformations,
+            rib_vertices,
             self.deltahedron.symmetry_axes,
-            self.helices_edges(),
+            # self.helices_edges(),
             self.deltahedron.vertices,
         )
 

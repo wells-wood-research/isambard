@@ -17,22 +17,22 @@ def custom_formatwarning(message, category, filename, lineno, line=None):
     return f"\033[93m{category.__name__}: {message}\033[0m\n"
 
 
-def are_ribs_equivalent(ribs1, ribs2, floating_points=3):
-    # Helper function to process each rib
-    def process_rib(rib):
-        # Round the coordinates to mitigate floating-point inaccuracies, convert to tuple for immutability
-        rounded_rib = tuple(
-            sorted(
-                tuple(round(coord, floating_points) for coord in point) for point in rib
-            )
-        )
-        return rounded_rib
+# def are_ribs_equivalent(edges_coordintates1, edges_coordintates2, floating_points=3):
+#     # Helper function to process each rib
+#     def process_rib(rib):
+#         # Round the coordinates to mitigate floating-point inaccuracies, convert to tuple for immutability
+#         rounded_rib = tuple(
+#             sorted(
+#                 tuple(round(coord, floating_points) for coord in point) for point in rib
+#             )
+#         )
+#         return rounded_rib
 
-    # Process all ribs, sort them to ignore order, and convert to tuple for direct comparison
-    processed_ribs1 = tuple(sorted(process_rib(rib) for rib in ribs1))
-    processed_ribs2 = tuple(sorted(process_rib(rib) for rib in ribs2))
+#     # Process all ribs, sort them to ignore order, and convert to tuple for direct comparison
+#     processed_edges_coordintates1 = tuple(sorted(process_rib(rib) for rib in edges_coordintates1))
+#     processed_edges_coordintates2 = tuple(sorted(process_rib(rib) for rib in edges_coordintates2))
 
-    return processed_ribs1 == processed_ribs2
+#     return processed_edges_coordintates1 == processed_edges_coordintates2
 
 
 def rotate_point_around_axis(point, axis_point1, axis_point2, angle_deg):
@@ -58,62 +58,69 @@ def rotate_point_around_axis(point, axis_point1, axis_point2, angle_deg):
     return tuple(rotated_point)
 
 
-def rotate_edges(edges, axis_point1, axis_point2, angle):
-    rotated_edges = []
-    for edge in edges:
-        start, end = edge[0], edge[1]
-        rotated_start = rotate_point_around_axis(
-            np.array(start), axis_point1, axis_point2, angle
-        )
-        rotated_end = rotate_point_around_axis(
-            np.array(end), axis_point1, axis_point2, angle
-        )
-        rotated_edges.append((rotated_start, rotated_end))
-    return rotated_edges
+# def rotate_edges(edges, axis_point1, axis_point2, angle):
+#     rotated_edges = []
+#     for edge in edges:
+#         start, end = edge[0], edge[1]
+#         rotated_start = rotate_point_around_axis(
+#             np.array(start), axis_point1, axis_point2, angle
+#         )
+#         rotated_end = rotate_point_around_axis(
+#             np.array(end), axis_point1, axis_point2, angle
+#         )
+#         rotated_edges.append((rotated_start, rotated_end))
+#     return rotated_edges
 
 
-def get_retained_symmetry_axes(
-    helix_conformations, symmetry_axes, helices_edges, vertices
-):
-    sorted_helix_edge_indices = [
-        tuple(sorted(helix_conformation.rib_vertices))
-        for helix_conformation in helix_conformations
-    ]
+def find_closest_deltahedorn_index(rotated_point, vertices):
+    max_distance=0.01
+    # Match the rotated point to the closest vertex index
+    min_distance = float('inf')
+    closest_index = -1
+    for i, vertex in enumerate(vertices):
+        distance = np.linalg.norm(np.array(rotated_point) - np.array(vertex))
+        if distance < min_distance:
+            min_distance = distance
+            closest_index = i
+    assert min_distance < max_distance, f"Rotated point was too far from any deltahedron vertex: {min_distance}. You have been using wrong axis, or wrong coordinates."
+    return closest_index
 
+
+
+def get_retained_symmetry_axes(rib_indices, symmetry_axes, indice_coordintates):
     retained_axes = {"C5": [], "C4": [], "C3": [], "C2": []}
-
-    for sym_type, axes in symmetry_axes.items():
-        n_rotamers = int(sym_type[-1])
+    for symmetry_group_name, axes in symmetry_axes.items():
         for axis in axes:
-
-            if (
-                axis[0] in sorted_helix_edge_indices
-                or axis[1] in sorted_helix_edge_indices
-            ):
-                # when cyclic axis goes through the middle of helix edge, it will flip the helix and think this is symmetric.
-                # we need to ignore this case as the helix is not the same after flipping.
+            if sorted(tuple(axis[0])) in [sorted(tuple(rib)) for rib in rib_indices] or sorted(tuple(axis[1])) in [sorted(tuple(rib)) for rib in rib_indices]:
+                print(f"Skipping axis {axis} of symmetry {symmetry_group_name} as the axis goes through the midpoint of helix")
                 continue
-            axis_point1 = np.mean([vertices[i] for i in axis[0]], axis=0)
-            axis_point2 = np.mean([vertices[i] for i in axis[1]], axis=0)
-            angles = np.linspace(0, 360, num=n_rotamers, endpoint=False)[1:]
-            all_matches = True
-            for angle in angles:
-                rotated_edges = rotate_edges(
-                    helices_edges, axis_point1, axis_point2, angle
-                )
-                # Convert edges to a comparable format
-                if not are_ribs_equivalent(helices_edges, rotated_edges):
-                    all_matches = False
-                    # print(
-                    #     f"Ribs not matching, axis{axis} n_rotamers{n_rotamers}, ,angle:{angle}"
-                    # )
-                    break
-
-            if all_matches:
-                retained_axes[sym_type].append(axis)
-
+            if validate_rib_symmetry_axis(symmetry_group_name, axis, rib_indices, indice_coordintates):
+                retained_axes[symmetry_group_name].append(axis)
     return retained_axes
 
+def validate_rib_symmetry_axis(symmetry_group_name,axis, rib_indices, indice_coordintates):
+    # print(f"Validating {symmetry_group_name} with axis {axis}")
+    axis_point1 = np.mean([indice_coordintates[i] for i in axis[0]], axis=0)
+    axis_point2 = np.mean([indice_coordintates[i] for i in axis[1]], axis=0)
+    n_rotamers = int(symmetry_group_name[-1])
+    angles_to_test = np.linspace(0, 360, num=n_rotamers, endpoint=False)[1:]
+    sorted_rib_indices = sorted([tuple(sorted(rib))
+                                for rib in rib_indices])
+
+    symmetry_is_valid = True
+    for angle in angles_to_test:
+        rotated_vertices = {i: rotate_point_around_axis(indice_coordintates[i], axis_point1, axis_point2, angle)
+                            for i in range(len(indice_coordintates))}
+        rotated_indices = {i: find_closest_deltahedorn_index(rotated_vertices[i], indice_coordintates)
+                           for i in range(len(indice_coordintates))}
+        new_sorted_helix_edge_indices = sorted([tuple(sorted((rotated_indices[edge[0]], rotated_indices[edge[1]])))
+                                  for edge in sorted_rib_indices])
+        # print(new_sorted_helix_edge_indices)
+        if new_sorted_helix_edge_indices != sorted_rib_indices:
+            symmetry_is_valid = False
+    
+    # print(f"Symmetry valid: {symmetry_is_valid}")
+    return symmetry_is_valid
 
 def test_deltahedron_symmetry_axes():
     angles = {"C5": 72, "C4": 90, "C3": 120, "C2": 180}
@@ -225,8 +232,9 @@ class Deltahedron:
 
 
 class Octahedron(Deltahedron):
+
     def __init__(self, edge_length):
-        super(Octahedron, self).__init__(edge_length)
+        super().__init__(edge_length)
         self.rib_num = 3
         self.name = "octahedron"
         return
@@ -265,7 +273,7 @@ class Octahedron(Deltahedron):
                 [(2, 3), (1, 4)],
             ],
         }
-
+    
     connection_matrix = [
         [1, 2, 3, 4],
         [0, 2, 4, 5],
@@ -274,6 +282,7 @@ class Octahedron(Deltahedron):
         [0, 1, 3, 5],
         [1, 2, 3, 4],
     ]
+
 
 
 class SnubDisophenoid(Deltahedron):
