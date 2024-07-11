@@ -16,8 +16,10 @@ from isambard.specifications.deltaprot_helper import (
     find_shortest_path,
     custom_formatwarning,
     get_retained_symmetry_axes,
+    get_hydrophobic_count,
+    get_CA_CB_phantom_vectors,
+    find_middle_degree_of_largest_cluster_of_max_values,
 )
-
 
 warnings.formatwarning = custom_formatwarning
 
@@ -101,6 +103,7 @@ class DeltaProt(Assembly):
         edge_length: float = None,
         centre_helices: bool = True,
         centred_ca: int = 1,
+        chain_label: str = None,
     ):
 
         super(DeltaProt, self).__init__()  # keep Assembly init and append this init
@@ -140,11 +143,21 @@ class DeltaProt(Assembly):
 
         self.build()
 
+        if chain_label is not None:
+            residue_id = 1
+            for chain in self:
+                chain.id = chain_label
+                for residue in chain:
+                    residue.id = residue_id
+                    residue_id += 1
+
     def get_directionless_rib_symmetry(self):
         # Ignores miror, improper rotations, inversions as they dont make sense for a chiral helix.
         # Only looks at cyclic rotational symmetries
         # Assumes that assembly symmetry will be a subset of deltahedron symmetry as the helices touch every vertex of deltahedron
-        rib_vertices = [helix_conf.rib_vertices for helix_conf in self.helix_conformations]
+        rib_vertices = [
+            helix_conf.rib_vertices for helix_conf in self.helix_conformations
+        ]
         return get_retained_symmetry_axes(
             rib_vertices,
             self.deltahedron.symmetry_axes,
@@ -319,6 +332,55 @@ class DeltaProt(Assembly):
             if sorted_rib_vertices == orientation_sorted_ribs:
                 determined_orientation_code = code  # Return the matching code
         return determined_orientation_code
+
+    def optimise_helix_rotations(self, degree_turn=5) -> None:
+        """
+        Optimises the helix rotations for the assembly and updates helix_conformations with the resulting angles.
+        """
+        current_hydrophobic_count = 0
+        optimised_hydrophobic_count = 0
+        for i, helix in enumerate(self):
+            current_hydrophobic_count += get_hydrophobic_count(
+                get_CA_CB_phantom_vectors(helix), self.deltahedron.vertices
+            )
+
+            helix_data = []
+            degrees_rotated = 0
+            assert 360 % degree_turn == 0, f" {degree_turn} must divide 360"
+            while degrees_rotated < 360.0:
+                helix.rotate(
+                    angle=degree_turn,
+                    axis=helix.axis.direction_vector,
+                    point=helix.axis.midpoint,
+                )
+                degrees_rotated += degree_turn
+
+                hydrophobic_count = get_hydrophobic_count(
+                    get_CA_CB_phantom_vectors(helix), self.deltahedron.vertices
+                )
+                helix_data.append([degrees_rotated, hydrophobic_count])
+
+            avg_optimal_angle, max_value = (
+                find_middle_degree_of_largest_cluster_of_max_values(helix_data)
+            )
+            assert degrees_rotated == 360
+            # since helix is now rotated 360, simply apply the optimal rotation to helix
+            helix.rotate(
+                angle=avg_optimal_angle,
+                axis=helix.axis.direction_vector,
+                point=helix.axis.midpoint,
+            )
+
+            optimised_hydrophobic_count += get_hydrophobic_count(
+                get_CA_CB_phantom_vectors(helix), self.deltahedron.vertices
+            )
+
+            # Update the helix_conformations with the resulting angle
+            self.helix_conformations[i].helix_axis_rotation = avg_optimal_angle
+
+        print(
+            f"Initial hydrophobic count: {current_hydrophobic_count}, optimised hydrophobic count: {optimised_hydrophobic_count}"
+        )
 
 
 # my_dp = DeltaProt(

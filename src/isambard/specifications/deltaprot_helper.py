@@ -9,6 +9,7 @@ import os
 from scipy.spatial.transform import Rotation as R
 
 import plotly.graph_objects as go
+from scipy.spatial import Delaunay
 
 
 ###########################################################################################
@@ -73,54 +74,74 @@ def rotate_point_around_axis(point, axis_point1, axis_point2, angle_deg):
 
 
 def find_closest_deltahedorn_index(rotated_point, vertices):
-    max_distance=0.01
+    max_distance = 0.01
     # Match the rotated point to the closest vertex index
-    min_distance = float('inf')
+    min_distance = float("inf")
     closest_index = -1
     for i, vertex in enumerate(vertices):
         distance = np.linalg.norm(np.array(rotated_point) - np.array(vertex))
         if distance < min_distance:
             min_distance = distance
             closest_index = i
-    assert min_distance < max_distance, f"Rotated point was too far from any deltahedron vertex: {min_distance}. You have been using wrong axis, or wrong coordinates."
+    assert (
+        min_distance < max_distance
+    ), f"Rotated point was too far from any deltahedron vertex: {min_distance}. You have been using wrong axis, or wrong coordinates."
     return closest_index
-
 
 
 def get_retained_symmetry_axes(rib_indices, symmetry_axes, indice_coordintates):
     retained_axes = {"C5": [], "C4": [], "C3": [], "C2": []}
     for symmetry_group_name, axes in symmetry_axes.items():
         for axis in axes:
-            if sorted(tuple(axis[0])) in [sorted(tuple(rib)) for rib in rib_indices] or sorted(tuple(axis[1])) in [sorted(tuple(rib)) for rib in rib_indices]:
-                print(f"Skipping axis {axis} of symmetry {symmetry_group_name} as the axis goes through the midpoint of helix")
+            if sorted(tuple(axis[0])) in [
+                sorted(tuple(rib)) for rib in rib_indices
+            ] or sorted(tuple(axis[1])) in [sorted(tuple(rib)) for rib in rib_indices]:
+                print(
+                    f"Skipping axis {axis} of symmetry {symmetry_group_name} as the axis goes through the midpoint of helix"
+                )
                 continue
-            if validate_rib_symmetry_axis(symmetry_group_name, axis, rib_indices, indice_coordintates):
+            if validate_rib_symmetry_axis(
+                symmetry_group_name, axis, rib_indices, indice_coordintates
+            ):
                 retained_axes[symmetry_group_name].append(axis)
     return retained_axes
 
-def validate_rib_symmetry_axis(symmetry_group_name,axis, rib_indices, indice_coordintates):
+
+def validate_rib_symmetry_axis(
+    symmetry_group_name, axis, rib_indices, indice_coordintates
+):
     # print(f"Validating {symmetry_group_name} with axis {axis}")
     axis_point1 = np.mean([indice_coordintates[i] for i in axis[0]], axis=0)
     axis_point2 = np.mean([indice_coordintates[i] for i in axis[1]], axis=0)
     n_rotamers = int(symmetry_group_name[-1])
     angles_to_test = np.linspace(0, 360, num=n_rotamers, endpoint=False)[1:]
-    sorted_rib_indices = sorted([tuple(sorted(rib))
-                                for rib in rib_indices])
+    sorted_rib_indices = sorted([tuple(sorted(rib)) for rib in rib_indices])
 
     symmetry_is_valid = True
     for angle in angles_to_test:
-        rotated_vertices = {i: rotate_point_around_axis(indice_coordintates[i], axis_point1, axis_point2, angle)
-                            for i in range(len(indice_coordintates))}
-        rotated_indices = {i: find_closest_deltahedorn_index(rotated_vertices[i], indice_coordintates)
-                           for i in range(len(indice_coordintates))}
-        new_sorted_helix_edge_indices = sorted([tuple(sorted((rotated_indices[edge[0]], rotated_indices[edge[1]])))
-                                  for edge in sorted_rib_indices])
+        rotated_vertices = {
+            i: rotate_point_around_axis(
+                indice_coordintates[i], axis_point1, axis_point2, angle
+            )
+            for i in range(len(indice_coordintates))
+        }
+        rotated_indices = {
+            i: find_closest_deltahedorn_index(rotated_vertices[i], indice_coordintates)
+            for i in range(len(indice_coordintates))
+        }
+        new_sorted_helix_edge_indices = sorted(
+            [
+                tuple(sorted((rotated_indices[edge[0]], rotated_indices[edge[1]])))
+                for edge in sorted_rib_indices
+            ]
+        )
         # print(new_sorted_helix_edge_indices)
         if new_sorted_helix_edge_indices != sorted_rib_indices:
             symmetry_is_valid = False
-    
+
     # print(f"Symmetry valid: {symmetry_is_valid}")
     return symmetry_is_valid
+
 
 def test_deltahedron_symmetry_axes():
     angles = {"C5": 72, "C4": 90, "C3": 120, "C2": 180}
@@ -273,7 +294,7 @@ class Octahedron(Deltahedron):
                 [(2, 3), (1, 4)],
             ],
         }
-    
+
     connection_matrix = [
         [1, 2, 3, 4],
         [0, 2, 4, 5],
@@ -282,7 +303,6 @@ class Octahedron(Deltahedron):
         [0, 1, 3, 5],
         [1, 2, 3, 4],
     ]
-
 
 
 class SnubDisophenoid(Deltahedron):
@@ -1078,3 +1098,138 @@ def get_taylor_overall_fold_score(combined_orientation_scores):
     # make sure the passed combined_orientation_scores already lacks the i>j combinations avoiding redundancy as well as i!=j avoiding self comparison of helices
     overall_fold_score = sum(combined_orientation_scores)
     return round(overall_fold_score, 2)
+
+
+def normalize_vector(vector):
+    magnitude = np.linalg.norm(vector)
+    return vector / magnitude
+
+
+def get_CA_CB_phantom_vectors(assembly):
+    amino_acids = [i for i in assembly.get_monomers()]
+    coord_list = []
+    for amino_acid in amino_acids:
+        # CA --> CB direction is direction of the side chain.
+        CA_coord = (
+            amino_acid.atoms["CA"].x,
+            amino_acid.atoms["CA"].y,
+            amino_acid.atoms["CA"].z,
+        )
+        N = amino_acid.atoms["N"].array
+        CA = amino_acid.atoms["CA"].array
+        C = amino_acid.atoms["C"].array
+        CB_coord = calculate_cb_coordinates(N, CA, C)
+        coord_list.append([CA_coord, CB_coord])
+    return coord_list
+
+
+def calculate_cb_coordinates(N, CA, C, chirality="L"):
+    # Direction vectors from CA to N and from CA to C
+    V_N_CA = CA - N
+    V_C_CA = CA - C
+
+    # Normalized mean direction vector, pointing towards the average direction of N and C from CA
+    mean_direction = normalize_vector(
+        normalize_vector(V_N_CA) + normalize_vector(V_C_CA)
+    )
+
+    # Normal vector to the plane defined by N, CA, C, indicating chirality
+    normal_plane = np.cross(V_N_CA, V_C_CA)
+    if chirality == "D":
+        normal_plane = -normal_plane  # Invert for D-chirality
+    normal_direction = normalize_vector(normal_plane)
+
+    # Adjust mean_direction to point 109.5/2 degrees away towards the direction defined by chirality
+    # Calculate rotation axis as cross product of mean_direction and normal_direction
+    rotation_axis = normalize_vector(np.cross(mean_direction, normal_direction))
+
+    # Rotate mean_direction around rotation_axis by 54.75 degrees (109.5/2) to get Cb_direction
+    angle = np.deg2rad(109.5 / 2)  # Convert angle to radians
+    cos_angle = np.cos(angle)
+    sin_angle = np.sin(angle)
+
+    # Rodrigues' rotation formula
+    Cb_direction = (
+        mean_direction * cos_angle
+        + np.cross(rotation_axis, mean_direction) * sin_angle
+        + rotation_axis * np.dot(rotation_axis, mean_direction) * (1 - cos_angle)
+    )
+
+    # Position of Cβ at a distance of 1.53 Å from Cα
+    CB = CA + normalize_vector(Cb_direction) * 1.53
+
+    return CB
+
+
+def get_hydrophobic_count(CA_CB_vectors, core_deltahedron_coordinates):
+    # Convert inputs to numpy arrays for vectorization
+    CA_CB_vectors = np.array(CA_CB_vectors)
+    core_deltahedron_coordinates = np.array(core_deltahedron_coordinates)
+
+    # Generate points for all vectors at once
+    points = generate_check_points_from_vectors_batch(CA_CB_vectors)
+    # Create Delaunay triangulation once
+    delaunay = Delaunay(core_deltahedron_coordinates)
+
+    # Check all points for containment in a batch operation
+    is_inside = delaunay.find_simplex(points) >= 0
+
+    # Reshape to match the number of vectors and points per vector
+    is_inside_reshaped = is_inside.reshape(CA_CB_vectors.shape[0], -1)
+
+    # Count how many vectors have more than half their points inside the core
+    hydrophobic_counts = np.sum(
+        np.sum(is_inside_reshaped, axis=1) >= (is_inside_reshaped.shape[1] / 2), axis=0
+    )
+
+    return hydrophobic_counts
+
+
+def generate_check_points_from_vectors_batch(
+    CA_CB_vectors, num_points=10, over_distance=2
+):
+    Ca = CA_CB_vectors[:, 0, :]
+    Cb = CA_CB_vectors[:, 1, :]
+
+    # Create an array of multipliers for point generation
+    multipliers = np.linspace(1, num_points, num_points) * (over_distance / num_points)
+
+    # Normalize vectors from Ca to Cb and scale by multipliers
+    directions = Cb - Ca
+    norms = np.linalg.norm(directions, axis=1, keepdims=True)
+    normalized_directions = directions / norms
+
+    # Create points along each vector
+    points = Cb[:, np.newaxis, :] + (
+        multipliers[:, np.newaxis] * normalized_directions[:, np.newaxis, :]
+    )
+
+    # Reshape points into (N * num_points, 3) for Delaunay input
+    return points.reshape(-1, 3)
+
+
+def find_middle_degree_of_largest_cluster_of_max_values(helix_data):
+    max_value = max(count for _, count in helix_data)
+    clusters = []
+    current_cluster = []
+
+    for degree, count in helix_data:
+        if count == max_value:
+            current_cluster.append(degree)
+        else:
+            if current_cluster:
+                clusters.append(current_cluster)
+                current_cluster = []
+
+    if current_cluster:  # Add the last cluster if it exists
+        clusters.append(current_cluster)
+
+    # Find the largest cluster
+    largest_cluster = max(clusters, key=len, default=[])
+
+    # Find the middle degree of the largest cluster
+    middle_degree_of_largest_cluster = (
+        largest_cluster[len(largest_cluster) // 2] - 1 if largest_cluster else 0
+    )
+
+    return middle_degree_of_largest_cluster, max_value
