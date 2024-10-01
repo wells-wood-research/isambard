@@ -151,7 +151,7 @@ class DeltaProt(Assembly):
                     residue.id = residue_id
                     residue_id += 1
 
-    def get_directionless_rib_symmetry(self):
+    def get_chiral_rib_symmetry(self):
         # Ignores miror, improper rotations, inversions as they dont make sense for a chiral helix.
         # Only looks at cyclic rotational symmetries
         # Assumes that assembly symmetry will be a subset of deltahedron symmetry as the helices touch every vertex of deltahedron

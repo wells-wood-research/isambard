@@ -104,7 +104,105 @@ def get_retained_symmetry_axes(rib_indices, symmetry_axes, indice_coordintates):
                 symmetry_group_name, axis, rib_indices, indice_coordintates
             ):
                 retained_axes[symmetry_group_name].append(axis)
-    return retained_axes
+
+    retained_axes_w_dihedrals = identify_dihedral_symmetry(
+        retained_axes, indice_coordintates
+    )
+    return retained_axes_w_dihedrals
+
+
+def identify_dihedral_symmetry(symmetry_dict, coordinates):
+    """
+    Identify dihedral symmetries ('D' symmetries) for each cyclic symmetry in the symmetry_dict.
+
+    Parameters:
+    - symmetry_dict: Dictionary specifying cyclic symmetries of an assembly of ribs.
+      Keys are symmetry types (e.g., 'C3', 'C2'), and values are lists of edges defined by index triples or pairs.
+    - coordinates: List of 3D coordinates representing the positions of the vertices connected by the edges.
+
+    Returns:
+    - updated_symmetry_dict: The input symmetry_dict updated with detected dihedral symmetries.
+    """
+    # Convert coordinates to numpy array for easier calculations
+    coordinates = np.array(coordinates)
+    tolerance = 1e-2  # Tolerance for numeric inaccuracies
+
+    # Copy the symmetry_dict to avoid modifying the original
+    updated_symmetry_dict = symmetry_dict.copy()
+
+    # Iterate over each cyclic symmetry in the dictionary
+    for symmetry_key in symmetry_dict:
+        if symmetry_key.startswith("C"):
+            n = int(symmetry_key[1:])  # Order of cyclic symmetry (e.g., 'C3' -> n=3)
+
+            # Get the edges associated with this cyclic symmetry
+            cn_edge_groups = symmetry_dict[symmetry_key]
+
+            # Skip if no edges are specified for this symmetry
+            if not cn_edge_groups:
+                continue
+
+            # Compute the axis of symmetry for the cyclic symmetry
+            # Using the first group of edges
+            cn_midpoints = []
+            for edge in cn_edge_groups[0]:
+                indices = edge
+                coords = coordinates[list(indices)]
+                midpoint = coords.mean(axis=0)
+                midpoint = np.round(midpoint, 2)  # Round to 2 decimal places
+                cn_midpoints.append(midpoint)
+
+            if len(cn_midpoints) >= 2:
+                # Compute direction vector of the cyclic symmetry axis
+                direction_vector = cn_midpoints[1] - cn_midpoints[0]
+                norm = np.linalg.norm(direction_vector)
+                if norm < tolerance:
+                    continue  # Skip if direction vector is too small
+                direction_vector /= norm
+            else:
+                continue  # Not enough midpoints to define an axis
+
+            # Initialize list to collect perpendicular 'C2' axes
+            c2_axes = []
+            c2_edge_pairs = []
+
+            # Iterate over 'C2' symmetries to find axes perpendicular to the 'Cn' axis
+            for c2_symmetry_key in symmetry_dict:
+                if c2_symmetry_key == "C2":
+                    c2_edge_groups = symmetry_dict[c2_symmetry_key]
+                    for edge_group in c2_edge_groups:
+                        # Compute midpoints of edges in 'C2' group
+                        c2_midpoints = []
+                        for edge in edge_group:
+                            indices = edge
+                            coords = coordinates[list(indices)]
+                            midpoint = coords.mean(axis=0)
+                            midpoint = np.round(midpoint, 2)
+                            c2_midpoints.append(midpoint)
+                        if len(c2_midpoints) >= 2:
+                            # Compute direction vector of 'C2' axis
+                            c2_direction_vector = c2_midpoints[1] - c2_midpoints[0]
+                            norm = np.linalg.norm(c2_direction_vector)
+                            if norm < tolerance:
+                                continue
+                            c2_direction_vector /= norm
+                        else:
+                            continue
+                        # Check if 'C2' axis is perpendicular to 'Cn' axis
+                        dot_product = np.dot(c2_direction_vector, direction_vector)
+                        if np.abs(dot_product) < tolerance:
+                            # Axes are perpendicular
+                            c2_axes.append(c2_direction_vector)
+                            c2_edge_pairs.append(edge_group)
+            # If number of perpendicular 'C2' axes equals 'n', dihedral symmetry exists
+            if len(c2_axes) >= n:
+                dn_key = "D" + str(n)
+                if dn_key not in updated_symmetry_dict:
+                    updated_symmetry_dict[dn_key] = []
+                # Add the relevant edge index pairs defining the 'C2' axes
+                updated_symmetry_dict[dn_key].extend(c2_edge_pairs[:n])
+
+    return updated_symmetry_dict
 
 
 def validate_rib_symmetry_axis(
@@ -135,11 +233,9 @@ def validate_rib_symmetry_axis(
                 for edge in sorted_rib_indices
             ]
         )
-        # print(new_sorted_helix_edge_indices)
         if new_sorted_helix_edge_indices != sorted_rib_indices:
             symmetry_is_valid = False
 
-    # print(f"Symmetry valid: {symmetry_is_valid}")
     return symmetry_is_valid
 
 
@@ -207,6 +303,7 @@ class Deltahedron:
         self.edge_length = edge_length
         self.vertices = self.generate_vertices()
         self.symmetry_axes = self.get_symmetry_axes()
+        # self.connection_matrix = None
 
     @classmethod
     def choose_deltahedron_by_rib_number(cls, rib_num: int, edge_length: float):
