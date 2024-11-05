@@ -19,6 +19,7 @@ from isambard.specifications.deltaprot_helper import (
     get_hydrophobic_count,
     get_CA_CB_phantom_vectors,
     find_middle_degree_of_largest_cluster_of_max_values,
+    get_MF_orientation_code_from_rib_vertices,
 )
 
 warnings.formatwarning = custom_formatwarning
@@ -137,7 +138,7 @@ class DeltaProt(Assembly):
 
         self.centred_ca = centred_ca - 1
 
-        self.orientation_code = self.determine_orientation_code()
+        self.orientation_code = self.get_MF_orientation_code()
 
         self.check_assembly_quality()
 
@@ -288,50 +289,10 @@ class DeltaProt(Assembly):
         for old, new in zip(self._molecules, new_model._molecules):
             old._monomers = new._monomers
 
-    def determine_orientation_code(self):
-        # TODO: this implementation is ignorant of deltahedron symmetry.
-        orientation_codes_sorted_ribs = {
-            "b3iii": [(0, 1), (2, 3), (4, 5)],
-            "b3nnn": [(0, 2), (1, 4), (3, 5)],
-            "b4iiiix": [(0, 5), (1, 3), (2, 7), (4, 6)],
-            "b4iiiiy": [(0, 1), (2, 5), (3, 4), (6, 7)],
-            "b4iiin": [(0, 4), (1, 5), (2, 6), (3, 7)],
-            "b4inin": [(0, 4), (1, 2), (3, 7), (5, 6)],
-            "b4innn": [(0, 5), (1, 2), (3, 7), (4, 6)],
-            "b4nnnnx": [(0, 3), (1, 5), (2, 6), (4, 7)],
-            "b4nnnny": [(0, 1), (2, 3), (4, 5), (6, 7)],
-            "b5iiiin": [(0, 4), (1, 2), (3, 8), (5, 6), (7, 9)],
-            "b5iinin": [(0, 4), (1, 5), (2, 6), (3, 8), (7, 9)],
-            "b5ininn": [(0, 1), (2, 6), (3, 8), (4, 5), (7, 9)],
-            "b5innnn": [(0, 1), (2, 6), (3, 4), (5, 8), (7, 9)],
-            "b6iiniin": [(0, 2), (1, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
-            "b6ininin": [(0, 3), (1, 7), (2, 8), (4, 9), (5, 10), (6, 11)],
-            "b6inninn": [(0, 3), (1, 2), (4, 9), (5, 10), (6, 11), (7, 8)],
-            "h4i.n": [(0, 5), (1, 3), (2, 6), (4, 7)],
-            "h5i.i": [(0, 1), (2, 3), (4, 8), (5, 6), (7, 9)],
-            "h5n.n": [(0, 4), (1, 6), (2, 3), (5, 8), (7, 9)],
-            "h6i.i.i": [(0, 4), (1, 2), (3, 9), (5, 6), (7, 8), (10, 11)],
-            "h6n.n.n": [(0, 1), (2, 7), (3, 4), (5, 10), (6, 11), (8, 9)],
-            "l4iin": [(0, 1), (2, 6), (3, 7), (4, 5)],
-            "l4inn": [(0, 1), (2, 5), (3, 7), (4, 6)],
-            "l5iiin": [(0, 2), (1, 6), (3, 4), (5, 8), (7, 9)],
-            "l5inni": [(0, 2), (1, 6), (3, 8), (4, 5), (7, 9)],
-            "l5innn": [(0, 3), (1, 4), (2, 6), (5, 8), (7, 9)],
-            "l5niin": [(0, 3), (1, 5), (2, 6), (4, 8), (7, 9)],
-            "l6innni": [(0, 1), (2, 3), (4, 9), (5, 10), (6, 11), (7, 8)],
-            "l6niiin": [(0, 1), (2, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
-            "s6": [(0, 5), (1, 7), (2, 3), (4, 9), (6, 10), (8, 11)],
-        }
-
-        # Match helix_conformation.rib_vertices against sorted orientation codes
+    def get_MF_orientation_code(self):
         rib_vertices = [i.rib_vertices for i in self.helix_conformations]
-
-        sorted_rib_vertices = sorted([tuple(sorted(pair)) for pair in rib_vertices])
-        determined_orientation_code = None
-        for code, orientation_sorted_ribs in orientation_codes_sorted_ribs.items():
-            if sorted_rib_vertices == orientation_sorted_ribs:
-                determined_orientation_code = code  # Return the matching code
-        return determined_orientation_code
+        orientation_code = get_MF_orientation_code_from_rib_vertices(rib_vertices)
+        return orientation_code
 
     def optimise_helix_rotations(self, degree_turn=5) -> None:
         """

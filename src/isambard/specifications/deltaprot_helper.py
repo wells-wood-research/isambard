@@ -1330,3 +1330,47 @@ def find_middle_degree_of_largest_cluster_of_max_values(helix_data):
     )
 
     return middle_degree_of_largest_cluster, max_value
+
+
+orientation_codes_sorted_ribs = {
+    "b3iii": [(0, 1), (2, 3), (4, 5)],
+    "b3nnn": [(0, 2), (1, 4), (3, 5)],
+    "b4iiiix": [(0, 5), (1, 3), (2, 7), (4, 6)],
+    "b4iiiiy": [(0, 1), (2, 5), (3, 4), (6, 7)],
+    "b4iiin": [(0, 4), (1, 5), (2, 6), (3, 7)],
+    "b4inin": [(0, 4), (1, 2), (3, 7), (5, 6)],
+    "b4innn": [(0, 5), (1, 2), (3, 7), (4, 6)],
+    "b4nnnnx": [(0, 3), (1, 5), (2, 6), (4, 7)],
+    "b4nnnny": [(0, 1), (2, 3), (4, 5), (6, 7)],
+    "b5iiiin": [(0, 4), (1, 2), (3, 8), (5, 6), (7, 9)],
+    "b5iinin": [(0, 4), (1, 5), (2, 6), (3, 8), (7, 9)],
+    "b5ininn": [(0, 1), (2, 6), (3, 8), (4, 5), (7, 9)],
+    "b5innnn": [(0, 1), (2, 6), (3, 4), (5, 8), (7, 9)],
+    "b6iiniin": [(0, 2), (1, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
+    "b6ininin": [(0, 3), (1, 7), (2, 8), (4, 9), (5, 10), (6, 11)],
+    "b6inninn": [(0, 3), (1, 2), (4, 9), (5, 10), (6, 11), (7, 8)],
+    "h4i.n": [(0, 5), (1, 3), (2, 6), (4, 7)],
+    "h5i.i": [(0, 1), (2, 3), (4, 8), (5, 6), (7, 9)],
+    "h5n.n": [(0, 4), (1, 6), (2, 3), (5, 8), (7, 9)],
+    "h6i.i.i": [(0, 4), (1, 2), (3, 9), (5, 6), (7, 8), (10, 11)],
+    "h6n.n.n": [(0, 1), (2, 7), (3, 4), (5, 10), (6, 11), (8, 9)],
+    "l4iin": [(0, 1), (2, 6), (3, 7), (4, 5)],
+    "l4inn": [(0, 1), (2, 5), (3, 7), (4, 6)],
+    "l5iiin": [(0, 2), (1, 6), (3, 4), (5, 8), (7, 9)],
+    "l5inni": [(0, 2), (1, 6), (3, 8), (4, 5), (7, 9)],
+    "l5innn": [(0, 3), (1, 4), (2, 6), (5, 8), (7, 9)],
+    "l5niin": [(0, 3), (1, 5), (2, 6), (4, 8), (7, 9)],
+    "l6innni": [(0, 1), (2, 3), (4, 9), (5, 10), (6, 11), (7, 8)],
+    "l6niiin": [(0, 1), (2, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
+    "s6": [(0, 5), (1, 7), (2, 3), (4, 9), (6, 10), (8, 11)],
+}
+
+def get_MF_orientation_code_from_rib_vertices(rib_vertices):
+    # TODO: this implementation is ignorant of deltahedron symmetry.
+    sorted_rib_vertices = sorted([tuple(sorted(pair)) for pair in rib_vertices])
+    determined_orientation_code = None
+    for code, orientation_sorted_ribs in orientation_codes_sorted_ribs.items():
+        if sorted_rib_vertices == orientation_sorted_ribs:
+            determined_orientation_code = code  # Return the matching code
+            break
+    return determined_orientation_code
