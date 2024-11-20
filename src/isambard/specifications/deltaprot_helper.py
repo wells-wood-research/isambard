@@ -122,6 +122,7 @@ def identify_dihedral_symmetry(symmetry_dict, coordinates):
 
     Returns:
     - updated_symmetry_dict: The input symmetry_dict updated with detected dihedral symmetries.
+      For 'Dn' symmetries, the primary axis and one secondary axis are included, sorted first.
     """
     # Convert coordinates to numpy array for easier calculations
     coordinates = np.array(coordinates)
@@ -199,8 +200,13 @@ def identify_dihedral_symmetry(symmetry_dict, coordinates):
                 dn_key = "D" + str(n)
                 if dn_key not in updated_symmetry_dict:
                     updated_symmetry_dict[dn_key] = []
-                # Add the relevant edge index pairs defining the 'C2' axes
-                updated_symmetry_dict[dn_key].extend(c2_edge_pairs[:n])
+                # Add the primary axis edge group and one sorted secondary axis edge group
+                # Ensure that the primary axis is first and the secondary axis is second
+                secondary_axis = sorted(
+                    c2_edge_pairs, key=lambda x: sum(sum(edge) for edge in x)
+                )[0]
+                dihedral_axes = [cn_edge_groups[0], secondary_axis]
+                updated_symmetry_dict[dn_key].append(dihedral_axes)
 
     return updated_symmetry_dict
 
@@ -1364,6 +1370,7 @@ orientation_codes_sorted_ribs = {
     "l6niiin": [(0, 1), (2, 7), (3, 8), (4, 9), (5, 10), (6, 11)],
     "s6": [(0, 5), (1, 7), (2, 3), (4, 9), (6, 10), (8, 11)],
 }
+
 
 def get_MF_orientation_code_from_rib_vertices(rib_vertices):
     # TODO: this implementation is ignorant of deltahedron symmetry.
