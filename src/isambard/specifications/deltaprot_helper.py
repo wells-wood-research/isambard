@@ -1218,12 +1218,21 @@ def get_CA_CB_phantom_vectors(assembly):
             amino_acid.atoms["CA"].y,
             amino_acid.atoms["CA"].z,
         )
-        N = amino_acid.atoms["N"].array
-        CA = amino_acid.atoms["CA"].array
-        C = amino_acid.atoms["C"].array
-        CB_coord = calculate_cb_coordinates(N, CA, C)
+        # N = amino_acid.atoms["N"].array
+        # CA = amino_acid.atoms["CA"].array
+        # C = amino_acid.atoms["C"].array
+        # CB_coord = calculate_cb_coordinates(N, CA, C)
+        CB_coord = calculate_cb_coordinates_from_amino_acid(amino_acid)
         coord_list.append([CA_coord, CB_coord])
     return coord_list
+
+
+def calculate_cb_coordinates_from_amino_acid(amino_acid):
+    N = amino_acid.atoms["N"].array
+    CA = amino_acid.atoms["CA"].array
+    C = amino_acid.atoms["C"].array
+    CB_coord = calculate_cb_coordinates(N, CA, C)
+    return CB_coord
 
 
 def calculate_cb_coordinates(N, CA, C, chirality="L"):
