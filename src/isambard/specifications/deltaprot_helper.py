@@ -354,6 +354,20 @@ class Deltahedron:
                     connections.append([vertex_index, connected_vertex])
         return connections
 
+    def transform(self, T: np.ndarray):
+        """
+        Apply a 4×4 homogeneous transform T to all vertices,
+        and update edge_length by the uniform scale extracted from T.
+        """
+        # Apply the 4×4 matrix to each vertex (in homogeneous coords)
+        self.vertices = [(T @ np.append(v, 1.0))[:3] for v in self.vertices]
+
+        # Extract the scale factor: assume uniform scaling, so we can
+        # take the norm of any transformed basis vector.
+        # E.g. transform of [1,0,0,0] → scale * [1,0,0].
+        scale = np.linalg.norm(T[:3, :3] @ np.array([1.0, 0, 0]))
+        self.edge_length *= scale
+
 
 class Octahedron(Deltahedron):
 

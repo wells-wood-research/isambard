@@ -291,6 +291,8 @@ class DeltaProt(Assembly):
 
     def get_MF_orientation_code(self):
         rib_vertices = [i.rib_vertices for i in self.helix_conformations]
+        if len(rib_vertices) != self.deltahedron.rib_num:
+            return None
         orientation_code = get_MF_orientation_code_from_rib_vertices(rib_vertices)
         return orientation_code
 
