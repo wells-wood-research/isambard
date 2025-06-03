@@ -1,14 +1,9 @@
 import numpy as np
 import json
-
-# from utils import *
-import itertools
 import math
 from ampal.geometry import dihedral
 import os
 from scipy.spatial.transform import Rotation as R
-
-import plotly.graph_objects as go
 from scipy.spatial import Delaunay
 
 
