@@ -355,6 +355,4 @@ class DeltaProt(Assembly):
 #     deltahedron_name="icosahedron",
 # )
 
-
-__author__ = "Tadas Kluonis"
-__status__ = "Development"
+__author__ = "Tadas Kluonis, Christopher W. Wood"
