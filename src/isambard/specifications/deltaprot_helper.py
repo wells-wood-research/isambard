@@ -13,6 +13,12 @@ def custom_formatwarning(message, category, filename, lineno, line=None):
     return f"\033[93m{category.__name__}: {message}\033[0m\n"
 
 
+def format_orientation(orientation_code):
+    return (
+        orientation_code.upper().replace("_", ".").replace("X", "x").replace("Y", "y")
+    )
+
+
 # def are_ribs_equivalent(edges_coordintates1, edges_coordintates2, floating_points=3):
 #     # Helper function to process each rib
 #     def process_rib(rib):
